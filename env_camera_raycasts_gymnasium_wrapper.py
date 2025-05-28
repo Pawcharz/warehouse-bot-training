@@ -15,7 +15,6 @@ class UnityCameraRaycastsGymWrapper(gym.Env):
         # Define observation space (assuming visual input)
         vis_obs_shape = self.spec.observation_specs[0].shape
         vec_obs_shape = self.spec.observation_specs[1].shape
-        # self.observation_space = spaces.Box(low=0, high=255, shape=obs_shape, dtype=np.uint8) # ???
         self.observation_space = spaces.Dict({
             "image": spaces.Box(low=0, high=255, shape=vis_obs_shape, dtype=np.uint8),
             "vector": spaces.Box(low=0, high=255, shape=vec_obs_shape, dtype=np.float32)
