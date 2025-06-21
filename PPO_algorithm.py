@@ -35,6 +35,10 @@ class RolloutBuffer:
             advantages.insert(0, gae)
 
         advantages = th.tensor(advantages, dtype=th.float32, device=self.device)
+        
+        # Normalize advantages
+        advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+        
         returns = advantages + vals[:-1]
 
         # Handle dictionary observations
@@ -74,6 +78,11 @@ class PPOAgent:
         surr2 = th.clamp(ratios, 1 - self.settings['clip_eps'], 1 + self.settings['clip_eps']) * mb_advantages
         policy_loss = -th.min(surr1, surr2).mean()
 
+        # Debugging predicted values vs. returns
+        print("values: ", values)
+        print("mb_returns: ", mb_returns)
+        print("difference: ", values - mb_returns)
+
         value_loss = ((values - mb_returns)**2).mean()
         entropy_bonus = entropy.mean()
 
@@ -81,47 +90,20 @@ class PPOAgent:
         entropy_bonus *= self.settings['ent_loss_coef']
         loss = policy_loss + value_loss - entropy_bonus
         
-        # Debug policy loss components - show more frequently
-        if hasattr(self, 'debug_step') and self.debug_step % 10 == 0:  # Changed from 100 to 10
-            print(f"\n=== Policy Loss Debug (Step {self.debug_step}) ===")
-            print(f"Log probs old - mean: {mb_old_logps.mean():.4f}, std: {mb_old_logps.std():.4f}")
-            print(f"Log probs new - mean: {logps.mean():.4f}, std: {logps.std():.4f}")
-            print(f"Log prob diff - mean: {(logps - mb_old_logps).mean():.4f}, std: {(logps - mb_old_logps).std():.4f}")
-            print(f"Ratios - mean: {ratios.mean():.4f}, std: {ratios.std():.4f}")
-            print(f"Advantages - mean: {mb_advantages.mean():.4f}, std: {mb_advantages.std():.4f}")
-            print(f"Surr1 - mean: {surr1.mean():.4f}, std: {surr1.std():.4f}")
-            print(f"Surr2 - mean: {surr2.mean():.4f}, std: {surr2.std():.4f}")
-            print(f"Policy loss: {policy_loss:.6f}")
-            print(f"Value loss: {value_loss:.6f}")
-            print(f"Entropy bonus: {entropy_bonus:.6f}")
-            
-            # Check for issues
-            if ratios.mean() < 0.5 or ratios.mean() > 2.0:
-                print("⚠️  WARNING: Ratios far from 1.0 - policy changed too much")
-            if mb_advantages.std() < 0.1:
-                print("⚠️  WARNING: Advantages have low variance - poor learning signal")
-            if th.abs(logps - mb_old_logps).mean() < 0.01:
-                print("⚠️  WARNING: Log probabilities barely changed")
-            if policy_loss > -0.001:
-                print("⚠️  WARNING: Policy loss is very small")
-        
+        print("Returns range:", mb_returns.min().item(), "to", mb_returns.max().item())
+        print("Values range:", values.min().item(), "to", values.max().item())
+        print("Value loss before coefficient:", ((values - mb_returns)**2).mean().item())
+        print("Value loss after coefficient:", value_loss.item())
+
         return loss, policy_loss, value_loss, entropy_bonus
     
     # Returns average loss of the batch
     def update(self, obs, acts, old_logps, returns, advantages):
         losses = {"total_loss": [], "policy_loss": [], "value_loss": [], "entropy_loss": []}
-
-        # Store original advantages for debugging
-        original_advantages = advantages.clone()
         
-        # Normalize advantages to have unit variance while preserving sign
-        # advantages_std = advantages.std() + 1e-8
-        advantages = advantages - advantages.mean()# / advantages_std
-        
-        print(f"Original advantages - mean: {original_advantages.mean():.4f}, std: {original_advantages.std():.4f}")
-        print(f"Normalized advantages - mean: {advantages.mean():.4f}, std: {advantages.std():.4f}")
+        print(f"Advantages - mean: {advantages.mean():.4f}, std: {advantages.std():.4f}")
 
-        for epoch in range(self.settings['ppo_epochs']):
+        for _ in range(self.settings['ppo_epochs']):
             # Get batch size based on observation type
             batch_len = len(obs) if not isinstance(obs, dict) else len(list(obs.values())[0])
             idxs = np.random.permutation(batch_len)
@@ -149,22 +131,15 @@ class PPOAgent:
 
                 self.optimizer.zero_grad()
                 loss.backward()
-
-                # Clip gradients
-                th.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=self.settings.get('max_grad_norm', 0.5))
-
-                # Update parameters
-                self.optimizer.step()
                 
-                # Increment debug step here, not in train method
-                if hasattr(self, 'debug_step'):
-                    self.debug_step += 1
+                # Add gradient clipping
+                th.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=0.5)
+                
+                self.optimizer.step()
 
         return losses
     
     def train(self, env, iterations):
-        self.debug_step = 0  # Initialize debug counter
-        
         for iteration in range(iterations):
             obs, _ = env.reset()
             buffer = RolloutBuffer(self.device)
@@ -224,7 +199,7 @@ class PPOAgent:
             mean_return = ep_returns_np.mean() if len(ep_returns_np) > 0 else 0.0
             std_return = ep_returns_np.std(ddof=0) if len(ep_returns_np) > 0 else 0.0
 
-            print(f"Iteration {iteration} | Episodes: {len(ep_returns)} | "
+            print(f"Iteration {iteration} completed. Episodes: {len(ep_returns)} | "
                   f"Mean Return: {mean_return:.4f} | Std Return: {std_return:.4f} | "
                   f"Mean steps: {mean_steps:.4f} | Std steps: {std_steps:.4f} | "
                   f"Mean losses: total: {mean_losses['total_loss']:.6f}, policy: {mean_losses['policy_loss']:.6f}, value: {mean_losses['value_loss']:.6f}, entropy: {mean_losses['entropy_loss']:.6f}")
