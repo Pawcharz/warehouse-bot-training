@@ -37,7 +37,9 @@ class RolloutBuffer:
         advantages = th.tensor(advantages, dtype=th.float32, device=self.device)
         
         # Normalize advantages
-        advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+        # advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+        
+        # advantages = advantages - advantages.mean()
         
         returns = advantages + vals[:-1]
 
@@ -78,22 +80,12 @@ class PPOAgent:
         surr2 = th.clamp(ratios, 1 - self.settings['clip_eps'], 1 + self.settings['clip_eps']) * mb_advantages
         policy_loss = -th.min(surr1, surr2).mean()
 
-        # Debugging predicted values vs. returns
-        print("values: ", values)
-        print("mb_returns: ", mb_returns)
-        print("difference: ", values - mb_returns)
-
         value_loss = ((values - mb_returns)**2).mean()
         entropy_bonus = entropy.mean()
 
         value_loss *= self.settings['val_loss_coef']
         entropy_bonus *= self.settings['ent_loss_coef']
         loss = policy_loss + value_loss - entropy_bonus
-        
-        print("Returns range:", mb_returns.min().item(), "to", mb_returns.max().item())
-        print("Values range:", values.min().item(), "to", values.max().item())
-        print("Value loss before coefficient:", ((values - mb_returns)**2).mean().item())
-        print("Value loss after coefficient:", value_loss.item())
 
         return loss, policy_loss, value_loss, entropy_bonus
     
