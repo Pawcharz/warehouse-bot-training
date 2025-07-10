@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Quick PPO Test Script
+PPO Implementation Comparison with Multiple Seeds
 
-A simplified script to quickly test your PPO implementation against SB3
-on multiple environments.
+Runs custom and SB3 PPO implementations on multiple seeds and provides
+statistical comparison of results.
 """
 
 import time
@@ -12,31 +12,62 @@ import torch as th
 import gymnasium as gym
 from stable_baselines3 import PPO
 import warnings
+import random
+import sys
+import os
+from config import SRC_DIR
 warnings.filterwarnings('ignore')
 
-# Import your custom implementations
-from src.algorithms.PPO_algorithm import PPOAgent
-from src.models.actor_critic import ActorCritic, ActorCriticMultimodal, count_parameters
+# Add src directory to path
+sys.path.insert(0, SRC_DIR)
 
-def test_custom_ppo(env_name="CartPole-v1", iterations=10):
-    """Test your custom PPO implementation"""
-    print(f"Testing Custom PPO on {env_name}...")
+from algorithms.PPO_algorithm import PPOAgent
+# from algorithms.PPO_algorithm_returns_clipping import PPOAgent
+from models.actor_critic import ActorCritic
+
+def set_seed(seed):
+    """Set all random seeds for reproducibility"""
+    random.seed(seed)
+    np.random.seed(seed)
+    th.manual_seed(seed)
+    th.cuda.manual_seed(seed)
+    th.cuda.manual_seed_all(seed)
+    th.backends.cudnn.deterministic = True
+    th.backends.cudnn.benchmark = False
+
+def evaluate_policy(agent, env, num_episodes=10, seed=0):
+    """Evaluate policy and return mean/std of returns"""
+    returns = []
     
-    # Setup
+    for episode in range(num_episodes):
+        obs, _ = env.reset(seed=seed + episode)
+        episode_return = 0
+        done = False
+        
+        while not done:
+            obs_tensor = th.tensor(obs, dtype=th.float32, device=agent.device).unsqueeze(0)
+            with th.no_grad():
+                action, _, _, _ = agent.model.get_action(obs_tensor, deterministic=True)
+            
+            obs, reward, terminated, truncated, _ = env.step(action.item())
+            episode_return += reward
+            done = terminated or truncated
+        
+        returns.append(episode_return)
+    
+    return np.mean(returns), np.std(returns)
+
+def test_custom_ppo(env_name, seed, iterations=10):
+    """Test custom PPO implementation"""
+    set_seed(seed)
+    
     device = th.device("cuda" if th.cuda.is_available() else "cpu")
     env = gym.make(env_name)
     obs_dim = env.observation_space.shape[0]
     act_dim = env.action_space.n
     
-    # Create model with separate policy and value networks
     model_net = ActorCritic(obs_dim, act_dim)
-
-    # Count parameters
-    model_params = count_parameters(model_net)
-    print("Model parameters:", model_params)
-    print("Total parameters:", model_params['total'])
-
-    # Create PPO agent with separate networks
+    
     settings = {
         'device': device,
         'lr': 3e-4,
@@ -49,49 +80,27 @@ def test_custom_ppo(env_name="CartPole-v1", iterations=10):
         'batch_size': 64,
         'update_timesteps': 1024,
         'val_loss_coef': 0.5,
-        'ent_loss_coef': 0.01
+        'ent_loss_coef': 0.01,
+        'seed': seed  # Add seed to settings
     }
-    agent = PPOAgent(model_net, settings)
     
-    # Train
+    agent = PPOAgent(model_net, settings, seed=seed)  # Pass seed to constructor
+    
     start_time = time.time()
     agent.train(env, iterations=iterations)
     training_time = time.time() - start_time
     
-    # Evaluate
-    eval_returns = []
-    for _ in range(10):
-        obs, _ = env.reset()
-        episode_return = 0
-        done = False
-        
-        while not done:
-            obs_tensor = th.tensor(obs, dtype=th.float32, device=device).unsqueeze(0)
-            with th.no_grad():
-                action, _, _, _ = agent.model.get_action(obs_tensor, deterministic=True)
-            
-            obs, reward, terminated, truncated, _ = env.step(action.item())
-            episode_return += reward
-            done = terminated or truncated
-        
-        eval_returns.append(episode_return)
-    
-    mean_return = np.mean(eval_returns)
-    std_return = np.std(eval_returns)
-    
-    print(f"  Custom PPO: {mean_return:.1f} ± {std_return:.1f} ({training_time:.1f}s)")
+    mean_return, std_return = evaluate_policy(agent, env, num_episodes=10, seed=seed)
     
     env.close()
     return mean_return, std_return, training_time
 
-def test_sb3_ppo(env_name="CartPole-v1", total_timesteps=10000):
+def test_sb3_ppo(env_name, seed, total_timesteps=10000):
     """Test SB3 PPO implementation"""
-    print(f"Testing SB3 PPO on {env_name}...")
+    set_seed(seed)
     
-    # Create environment
     env = gym.make(env_name)
     
-    # Create model with similar hyperparameters
     model = PPO(
         "MlpPolicy",
         env,
@@ -105,18 +114,18 @@ def test_sb3_ppo(env_name="CartPole-v1", total_timesteps=10000):
         gae_lambda=0.95,
         ent_coef=0.01,
         vf_coef=0.5,
-        max_grad_norm=0.5
+        max_grad_norm=0.5,
+        seed=seed  # Add seed parameter
     )
     
-    # Train
     start_time = time.time()
     model.learn(total_timesteps=total_timesteps)
     training_time = time.time() - start_time
     
     # Evaluate
     eval_returns = []
-    for _ in range(10):
-        obs, _ = env.reset()
+    for episode in range(10):
+        obs, _ = env.reset(seed=seed + episode)
         episode_return = 0
         done = False
         
@@ -131,94 +140,134 @@ def test_sb3_ppo(env_name="CartPole-v1", total_timesteps=10000):
     mean_return = np.mean(eval_returns)
     std_return = np.std(eval_returns)
     
-    print(f"  SB3 PPO:    {mean_return:.1f} ± {std_return:.1f} ({training_time:.1f}s)")
-    
     env.close()
     return mean_return, std_return, training_time
 
-def run_environment_comparison(env_name, custom_iterations, sb3_timesteps):
-    """Run comparison for a single environment"""
+def run_comparison(env_name, seeds, custom_iterations=10, sb3_timesteps=10000):
+    """Run comparison for one environment across multiple seeds"""
     print(f"\n{env_name}:")
     
-    # Test Custom PPO
-    custom_mean, custom_std, custom_time = test_custom_ppo(env_name, iterations=custom_iterations)
+    custom_results = []
+    sb3_results = []
     
-    # Test SB3 PPO
-    sb3_mean, sb3_std, sb3_time = test_sb3_ppo(env_name, total_timesteps=sb3_timesteps)
+    for i, seed in enumerate(seeds):
+        print(f"  Seed {seed} ({i+1}/{len(seeds)})...", end=" ")
+        
+        try:
+            custom_mean, custom_std, custom_time = test_custom_ppo(env_name, seed, custom_iterations)
+            sb3_mean, sb3_std, sb3_time = test_sb3_ppo(env_name, seed, sb3_timesteps)
+            
+            custom_results.append({
+                'mean': custom_mean,
+                'std': custom_std,
+                'time': custom_time
+            })
+            
+            sb3_results.append({
+                'mean': sb3_mean,
+                'std': sb3_std,
+                'time': sb3_time
+            })
+            
+            print(f"✓")
+            
+        except Exception as e:
+            print(f"✗ ({str(e)})")
+            continue
     
-    # Quick comparison
-    if custom_mean > sb3_mean:
-        improvement = ((custom_mean - sb3_mean) / sb3_mean) * 100
-        print(f"  ✅ Custom PPO {improvement:.0f}% better")
-    elif sb3_mean > custom_mean:
-        improvement = ((sb3_mean - custom_mean) / custom_mean) * 100
-        print(f"  ❌ SB3 PPO {improvement:.0f}% better")
-    else:
-        print(f"  🤝 Similar performance")
+    if not custom_results or not sb3_results:
+        print(f"  ❌ No successful runs for {env_name}")
+        return None
     
-    speed_ratio = custom_time / sb3_time
-    print(f"  Speed: {speed_ratio:.1f}x {'slower' if speed_ratio > 1 else 'faster'}")
+    # Calculate statistics
+    custom_means = [r['mean'] for r in custom_results]
+    custom_stds = [r['std'] for r in custom_results]
+    custom_times = [r['time'] for r in custom_results]
+    
+    sb3_means = [r['mean'] for r in sb3_results]
+    sb3_stds = [r['std'] for r in sb3_results]
+    sb3_times = [r['time'] for r in sb3_results]
+    
+    # Overall statistics
+    custom_mean_of_means = np.mean(custom_means)
+    custom_std_of_means = np.std(custom_means)
+    custom_mean_of_stds = np.mean(custom_stds)
+    custom_mean_time = np.mean(custom_times)
+    
+    sb3_mean_of_means = np.mean(sb3_means)
+    sb3_std_of_means = np.std(sb3_means)
+    sb3_mean_of_stds = np.mean(sb3_stds)
+    sb3_mean_time = np.mean(sb3_times)
+    
+    print(f"  Custom PPO: {custom_mean_of_means:.1f} ± {custom_std_of_means:.1f} (eval_std: {custom_mean_of_stds:.1f}, time: {custom_mean_time:.1f}s)")
+    print(f"  SB3 PPO:    {sb3_mean_of_means:.1f} ± {sb3_std_of_means:.1f} (eval_std: {sb3_mean_of_stds:.1f}, time: {sb3_mean_time:.1f}s)")
     
     return {
         'env_name': env_name,
-        'custom_mean': custom_mean,
-        'custom_std': custom_std,
-        'custom_time': custom_time,
-        'sb3_mean': sb3_mean,
-        'sb3_std': sb3_std,
-        'sb3_time': sb3_time,
-        'performance_winner': 'custom' if custom_mean > sb3_mean else 'sb3' if sb3_mean > custom_mean else 'tie',
-        'speed_ratio': speed_ratio
+        'custom_mean_of_means': custom_mean_of_means,
+        'custom_std_of_means': custom_std_of_means,
+        'custom_mean_of_stds': custom_mean_of_stds,
+        'custom_mean_time': custom_mean_time,
+        'sb3_mean_of_means': sb3_mean_of_means,
+        'sb3_std_of_means': sb3_std_of_means,
+        'sb3_mean_of_stds': sb3_mean_of_stds,
+        'sb3_mean_time': sb3_mean_time,
+        'performance_winner': 'custom' if custom_mean_of_means > sb3_mean_of_means else 'sb3' if sb3_mean_of_means > custom_mean_of_means else 'tie',
+        'speed_ratio': custom_mean_time / sb3_mean_time,
+        'n_runs': len(custom_results)
     }
 
 def main():
-    """Run the comparison across multiple environments"""
-    print("PPO Implementation Comparison")
-    print("=" * 50)
+    """Main comparison function"""
+    print("PPO Implementation Comparison with Multiple Seeds")
+    print("=" * 60)
     
     # Configuration
+    seeds = range(10) # 10 different seeds
     custom_iterations = 10
     sb3_timesteps = 10000
     
-    environments = [
-        "CartPole-v1",
-        "Acrobot-v1"
-    ]
+    environments = ["CartPole-v1", "Acrobot-v1"]
     
+    print(f"Seeds: {seeds}")
     print(f"Config: {custom_iterations} iterations vs {sb3_timesteps} timesteps")
     
-    # Store results
+    # Run comparisons
     all_results = []
     
-    # Test each environment
     for env_name in environments:
-        try:
-            result = run_environment_comparison(env_name, custom_iterations, sb3_timesteps)
+        result = run_comparison(env_name, seeds, custom_iterations, sb3_timesteps)
+        if result:
             all_results.append(result)
-        except Exception as e:
-            print(f"❌ Error testing {env_name}: {str(e)}")
-            continue
     
-    # Summary
     if not all_results:
-        print("❌ No successful tests completed")
+        print("\n❌ No successful comparisons completed")
         return
     
-    print(f"\n{'='*50}")
-    print("SUMMARY")
-    print(f"{'='*50}")
+    # Summary statistics
+    print(f"\n{'='*60}")
+    print("SUMMARY STATISTICS")
+    print(f"{'='*60}")
     
+    # Overall performance comparison
     custom_wins = sum(1 for r in all_results if r['performance_winner'] == 'custom')
     sb3_wins = sum(1 for r in all_results if r['performance_winner'] == 'sb3')
     ties = sum(1 for r in all_results if r['performance_winner'] == 'tie')
     
-    avg_custom_return = np.mean([r['custom_mean'] for r in all_results])
-    avg_sb3_return = np.mean([r['sb3_mean'] for r in all_results])
+    # Average performance across all environments
+    avg_custom_return = np.mean([r['custom_mean_of_means'] for r in all_results])
+    avg_sb3_return = np.mean([r['sb3_mean_of_means'] for r in all_results])
     avg_speed_ratio = np.mean([r['speed_ratio'] for r in all_results])
     
     print(f"Environments tested: {len(all_results)}")
+    print(f"Successful runs per environment: {all_results[0]['n_runs']}")
     print()
-    print(f"Average Returns:")
+    print(f"Performance Wins:")
+    print(f"  Custom PPO: {custom_wins}")
+    print(f"  SB3 PPO: {sb3_wins}")
+    print(f"  Ties: {ties}")
+    print()
+    print(f"Average Returns (across environments):")
     print(f"  Custom PPO: {avg_custom_return:.2f}")
     print(f"  SB3 PPO: {avg_sb3_return:.2f}")
     print()
@@ -226,11 +275,11 @@ def main():
     print(f"  (Custom PPO is {'slower' if avg_speed_ratio > 1 else 'faster'} on average)")
     
     # Detailed results table
-    print(f"\n{'='*80}")
+    print(f"\n{'='*100}")
     print("DETAILED RESULTS")
-    print(f"{'='*80}")
-    print(f"{'Environment':<15} {'Custom Return':<15} {'SB3 Return':<15} {'Winner':<10} {'Speed Ratio':<12}")
-    print(f"{'-'*80}")
+    print(f"{'='*100}")
+    print(f"{'Environment':<15} {'Custom (μ±σ)':<20} {'SB3 (μ±σ)':<20} {'Winner':<10} {'Speed':<10} {'Runs':<5}")
+    print(f"{'-'*100}")
     
     for result in all_results:
         winner_symbol = {
@@ -239,40 +288,11 @@ def main():
             'tie': '🤝 Tie'
         }[result['performance_winner']]
         
-        print(f"{result['env_name']:<15} {result['custom_mean']:<15.2f} {result['sb3_mean']:<15.2f} {winner_symbol:<10} {result['speed_ratio']:<12.2f}x")
-
-def example_vector_only():
-    """Example for vector-only observations"""
-    print("=== Vector-only Example ===")
-    
-    # Create model with separate policy and value networks for vector observations
-    obs_dim = 128  # Example observation dimension
-    act_dim = 4    # Example action space size
-    
-    model_net = ActorCritic(obs_dim, act_dim)
-    
-    # Count parameters
-    model_params = count_parameters(model_net)
-    print("Model parameters:", model_params)
-    print("Total parameters:", model_params['total'])
-    
-    # Create PPO agent
-    settings = {
-        'device': 'cuda' if th.cuda.is_available() else 'cpu',
-        'lr': 3e-4,
-        'gamma': 0.99,
-        'lambda': 0.95,
-        'clip_eps': 0.2,
-        'target_kl': 0.01,
-        'max_grad_norm': 0.5,
-        'ppo_epochs': 4,
-        'batch_size': 64,
-        'update_timesteps': 1024,
-        'val_loss_coef': 0.5,
-        'ent_loss_coef': 0.01
-    }
-    agent = PPOAgent(model_net, settings)
-    print("Vector-only PPO Agent created with separate policy and value networks!")
+        custom_str = f"{result['custom_mean_of_means']:.1f}±{result['custom_std_of_means']:.1f}"
+        sb3_str = f"{result['sb3_mean_of_means']:.1f}±{result['sb3_std_of_means']:.1f}"
+        speed_str = f"{result['speed_ratio']:.1f}x"
+        
+        print(f"{result['env_name']:<15} {custom_str:<20} {sb3_str:<20} {winner_symbol:<10} {speed_str:<10} {result['n_runs']:<5}")
 
 if __name__ == "__main__":
-    main()
+    main() 

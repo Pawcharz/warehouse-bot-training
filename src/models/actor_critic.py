@@ -1,6 +1,7 @@
 import torch as th
 import torch.nn as nn
 from torch.distributions import Categorical
+import numpy as np
 
 class Swish(nn.Module):
     def forward(self, x):
@@ -30,6 +31,16 @@ class ActorCritic(nn.Module):
             nn.Tanh(),
             nn.Linear(64, 1)
         )
+        
+        # Initialize weights deterministically
+        self._init_weights()
+    
+    def _init_weights(self):
+        """Initialize network weights deterministically"""
+        for module in self.modules():
+            if isinstance(module, nn.Linear):
+                nn.init.orthogonal_(module.weight)
+                nn.init.constant_(module.bias, 0.0)
 
     def forward(self, x):
         return self.actor(x), self.critic(x)

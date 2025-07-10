@@ -2,7 +2,7 @@
 """
 Simple PPO Test Script for CartPole-v1
 
-A basic script to test your custom PPO implementation on CartPole-v1
+A basic script to test custom PPO implementation on CartPole-v1
 and log evaluation results after training.
 """
 
@@ -10,8 +10,16 @@ import time
 import numpy as np
 import torch as th
 import gymnasium as gym
-from src.algorithms.PPO_algorithm import PPOAgent
-from src.models.actor_critic import ActorCritic, count_parameters
+import sys
+import os
+from config import SRC_DIR
+
+# Add src directory to path
+sys.path.insert(0, SRC_DIR)
+
+# from src.algorithms.PPO_algorithm import PPOAgent
+from algorithms.PPO_algorithm_returns_clipping import PPOAgent
+from models.actor_critic import ActorCritic, count_parameters
 import random
 
 def evaluate_policy(agent, env, num_episodes=10, seed=0):
@@ -58,7 +66,7 @@ def main():
     print(f"Action dimension: {act_dim}")
     
     # Set seed for reproducibility
-    seed = 0
+    seed = 8
     
     # Set seeds before creating model to ensure deterministic initialization
     th.manual_seed(seed)

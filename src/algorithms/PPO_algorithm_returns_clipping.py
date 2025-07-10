@@ -174,7 +174,7 @@ class PPOAgent:
         th.cuda.manual_seed_all(seed)
 
     # Returns: loss, policy_loss, value_loss, entropy_bonus
-    def calculate_loss(self, mb_obs, mb_acts, mb_old_logps, mb_returns, mb_advantages):
+    def calculate_loss(self, mb_obs, mb_acts, mb_old_logps, mb_returns, mb_advantages, mb_old_values=None):
         logps, entropy, values = self.model.evaluate_actions(mb_obs, mb_acts)
         ratios = th.exp(logps - mb_old_logps)
 
@@ -183,9 +183,20 @@ class PPOAgent:
         surr2 = th.clamp(ratios, 1 - self.settings['clip_eps'], 1 + self.settings['clip_eps']) * mb_advantages
         policy_loss = -th.min(surr1, surr2).mean()
 
-        # Value loss
-        value_loss = ((values - mb_returns)**2).mean()
-        # print("value loss mean: ", value_loss.mean())
+        # Value loss with proper clipping (SB3 approach)
+        if mb_old_values is not None:
+            # Clip new values relative to old values
+            value_pred_clipped = mb_old_values + th.clamp(
+                values - mb_old_values, 
+                -self.value_clip_eps, 
+                self.value_clip_eps
+            )
+            value_losses = (values - mb_returns) ** 2
+            value_losses_clipped = (value_pred_clipped - mb_returns) ** 2
+            value_loss = th.max(value_losses, value_losses_clipped).mean()
+        else:
+            # Fallback to MSE if old values not provided
+            value_loss = ((values - mb_returns)**2).mean()
 
         # Entropy loss
         entropy_bonus = entropy.mean()
@@ -199,8 +210,11 @@ class PPOAgent:
         return total_loss, policy_loss, value_loss, entropy_bonus
     
     # Returns average loss of the batch
-    def update(self, obs, acts, old_logps, returns, advantages):
+    def update(self, obs, acts, old_logps, returns, advantages, old_values=None):
         losses = {"total_loss": [], "policy_loss": [], "value_loss": [], "entropy_loss": []}
+        
+        # Normalize advantages - CRITICAL for PPO stability
+        # advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
       
         for epoch in range(self.settings['ppo_epochs']):
             # Get batch size based on observation type
@@ -226,10 +240,11 @@ class PPOAgent:
                 mb_old_logps = old_logps[mb_idx]
                 mb_returns = returns[mb_idx]
                 mb_advantages = advantages[mb_idx]
+                mb_old_values = old_values[mb_idx] if old_values is not None else None
 
                 # Calculate combined loss for both networks
                 total_loss, policy_loss, value_loss, entropy_bonus = self.calculate_loss(
-                    mb_obs, mb_acts, mb_old_logps, mb_returns, mb_advantages
+                    mb_obs, mb_acts, mb_old_logps, mb_returns, mb_advantages, mb_old_values
                 )
                 
                 # Update both networks with single optimizer
@@ -341,7 +356,8 @@ class PPOAgent:
                 buffer_data['acts'], 
                 buffer_data['logps'], 
                 returns, 
-                advantages
+                advantages,
+                buffer_data['vals']  # Pass old values for value function clipping
             )
             
             # Clear buffer for next iteration
