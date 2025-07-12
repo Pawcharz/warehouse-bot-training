@@ -1,7 +1,10 @@
+import time
 import torch as th
 import torch.optim as optim
 import numpy as np
 import random
+from torch.utils.tensorboard import SummaryWriter
+import os
 
 class GAE:
     def __init__(self, gamma: float, lam: float):
@@ -148,8 +151,52 @@ class PPOAgent:
         self.value_clip_eps = settings.get('value_clip_eps', 0.2)  # Separate clipping for value function
         self.max_grad_norm = settings.get('max_grad_norm', 0.5)
         
+        # Store other settings as instance variables for logging
+        self.learning_rate = settings.get('lr', 3e-4)
+        self.gamma = settings.get('gamma', 0.99)
+        self.lambda_val = settings.get('lambda', 0.95)
+        self.ppo_epochs = settings.get('ppo_epochs', 4)
+        self.batch_size = settings.get('batch_size', 64)
+        self.update_timesteps = settings.get('update_timesteps', 1024)
+        self.val_loss_coef = settings.get('val_loss_coef', 0.5)
+        self.ent_loss_coef = settings.get('ent_loss_coef', 0.01)
+        
         # Store the seed for later use
         self.seed = seed
+        
+        # Initialize TensorBoard logger
+        self.logger = None
+        if settings.get('use_tensorboard', True):
+            log_dir = settings.get('tensorboard_log_dir', 'runs/ppo_training')
+            experiment_name = settings.get('experiment_name', f'ppo_seed_{seed}')
+            full_log_dir = os.path.join(log_dir, experiment_name)
+            self.logger = SummaryWriter(full_log_dir)
+            
+            # Log hyperparameters
+            self._log_hyperparameters()
+
+    def _log_hyperparameters(self):
+        """Log hyperparameters to TensorBoard"""
+        if self.logger is None:
+            return
+            
+        # Create a dictionary of hyperparameters to log
+        hparams = {
+            'learning_rate': self.learning_rate,
+            'gamma': self.gamma,
+            'lambda': self.lambda_val,
+            'clip_eps': self.clip_eps,
+            'ppo_epochs': self.ppo_epochs,
+            'batch_size': self.batch_size,
+            'update_timesteps': self.update_timesteps,
+            'val_loss_coef': self.val_loss_coef,
+            'ent_loss_coef': self.ent_loss_coef,
+            'max_grad_norm': self.max_grad_norm,
+            'seed': self.seed
+        }
+        
+        # Log hyperparameters
+        self.logger.add_hparams(hparams, {})
 
     def set_seed(self, seed):
         """Set seeds for all random components to ensure reproducibility"""
@@ -157,7 +204,7 @@ class PPOAgent:
         np.random.seed(seed)
         th.manual_seed(seed)
         th.cuda.manual_seed(seed)
-        th.cuda.manual_seed_all(seed)  # For multi-GPU setups
+        th.cuda.manual_seed_all(seed)
         th.backends.cudnn.deterministic = True
         th.backends.cudnn.benchmark = False
         
@@ -254,12 +301,15 @@ class PPOAgent:
     
     def train(self, env, iterations):
         for iteration in range(iterations):
+            time_start = time.time()
+          
             # Reset seeds for this iteration to ensure reproducibility
             self.reset_seed_for_iteration(iteration)
             
             # Seed the environment for reproducibility
             obs, _ = env.reset(seed=self.settings.get('seed', 0) + iteration)
             buffer = RolloutBuffer(self.device)
+
             # Reset reward normalizer for new iteration
             self.reward_normalizer.reset()
             ep_return = 0
@@ -332,8 +382,8 @@ class PPOAgent:
             
             returns = th.tensor(returns, dtype=th.float32, device=self.device)
 
-            # Normalize advantages for better training stability
-            # advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+            # Advantages are not normalized, because all the rewards are already
+            # normalized. Additional normalization would make policy loss too small.
 
             # Training step
             losses = self.update(
@@ -358,7 +408,29 @@ class PPOAgent:
             mean_return = ep_returns_np.mean() if len(ep_returns_np) > 0 else 0.0
             std_return = ep_returns_np.std(ddof=0) if len(ep_returns_np) > 0 else 0.0
 
-            print(f"Iteration {iteration} completed. Episodes: {len(ep_returns)} | "
+            time_end = time.time()
+            time_taken = time_end - time_start
+
+            # Log metrics to TensorBoard
+            if self.logger is not None:
+                self.logger.add_scalar('Training/Mean_Return', mean_return, iteration)
+                self.logger.add_scalar('Training/Std_Return', std_return, iteration)
+                self.logger.add_scalar('Training/Mean_Steps', mean_steps, iteration)
+                self.logger.add_scalar('Training/Std_Steps', std_steps, iteration)
+                self.logger.add_scalar('Training/Time_Taken', time_taken, iteration)
+                self.logger.add_scalar('Training/Episodes', len(ep_returns), iteration)
+                
+                # Log losses
+                self.logger.add_scalar('Losses/Total_Loss', mean_losses['total_loss'], iteration)
+                self.logger.add_scalar('Losses/Policy_Loss', mean_losses['policy_loss'], iteration)
+                self.logger.add_scalar('Losses/Value_Loss', mean_losses['value_loss'], iteration)
+                self.logger.add_scalar('Losses/Entropy_Loss', mean_losses['entropy_loss'], iteration)
+
+            print(f"Iteration {iteration} completed. Episodes: {len(ep_returns)} | Time taken: {time_taken:.2f}s | "
                   f"Mean Return: {mean_return:.4f} | Std Return: {std_return:.4f} | "
                   f"Mean steps: {mean_steps:.4f} | Std steps: {std_steps:.4f} | "
                   f"Mean losses: total: {mean_losses['total_loss']:.6f}, policy: {mean_losses['policy_loss']:.6f}, value: {mean_losses['value_loss']:.6f}, entropy: {mean_losses['entropy_loss']:.6f}")
+        
+        # Close TensorBoard logger
+        if self.logger is not None:
+            self.logger.close()

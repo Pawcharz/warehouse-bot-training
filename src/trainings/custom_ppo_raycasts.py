@@ -14,23 +14,23 @@ import torch as th
 from torch import multiprocessing
 import numpy as np
 import random
+import os
 
 # Environment imports
 from mlagents_envs.side_channel.engine_configuration_channel import EngineConfigurationChannel
 from mlagents_envs.environment import UnityEnvironment
-from environments.env_raycasts_gymnasium_wrapper import UnityRaycastsGymWrapper
+from src.environments.env_raycasts_gymnasium_wrapper import UnityRaycastsGymWrapper
 
 # Algorithm imports
-# from algorithms.PPO_algorithm import PPOAgent
-from algorithms.PPO_algorithm_returns_clipping import PPOAgent
-from models.actor_critic import ActorCritic, count_parameters
+from src.algorithms.PPO_algorithm import PPOAgent
+# from src.algorithms.PPO_algorithm_returns_clipping import PPOAgent
+from src.models.actor_critic import ActorCritic, count_parameters
+
+from config import ROOT_DIR
 
 def make_env():
     """Create and configure the Unity environment"""
-    # Get the project root directory (go up two levels from src/trainings/)
-    import os
-    project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    env_path = os.path.join(project_root, "environment_builds/stage1/warehouse_stage1_complex_pos_neg_3/Warehouse_Bot.exe")
+    env_path = os.path.join(ROOT_DIR, "environment_builds/stage1/S1_Find_16rays_rew0_100/Warehouse_Bot.exe")
     
     # Debug: print the path to verify it's correct
     print(f"Looking for environment at: {env_path}")
@@ -44,7 +44,7 @@ def make_env():
         no_graphics=True
     )
     
-    channel.set_configuration_parameters(time_scale=1)
+    # channel.set_configuration_parameters(time_scale=1)
     
     gymnasium_env = UnityRaycastsGymWrapper(unity_env)
     
@@ -59,7 +59,6 @@ def evaluate_policy(agent, env, num_episodes=10, seed=0):
     steps = []
     
     for episode in range(num_episodes):
-        # Seed the environment for reproducible evaluation
         obs, _ = env.reset(seed=seed + episode)
         episode_return = 0
         episode_steps = 0
@@ -108,7 +107,7 @@ def main():
     print(f"Action dimension: {act_dim}")
     
     # Set seed for reproducibility
-    seed = 42
+    seed = 0
     print(f"Using seed: {seed}")
     
     # Set seeds before creating model to ensure deterministic initialization
@@ -120,28 +119,32 @@ def main():
     th.backends.cudnn.deterministic = True
     th.backends.cudnn.benchmark = False
     
-    # Create model after setting seeds
+    # PPO settings
+    settings = {
+        'gamma': 0.99,
+        'lambda': 0.95,
+        'clip_eps': 0.2,
+        'ppo_epochs': 4,
+        'batch_size': 128,
+        'update_timesteps': 2048,
+        'lr': 3e-4,
+        'val_loss_coef': 0.5,
+        'ent_loss_coef': 0.01,
+        'device': device,
+        'seed': seed,
+        'use_tensorboard': True,
+        'tensorboard_log_dir': 'logs/stage1/S1_Find_16rays_rew0_100',
+        'experiment_name': f'ppo_seed_{seed}'
+    }
+    training_iterations = 200
+
+    # Create model
     model_net = ActorCritic(obs_dim, act_dim)
     
     # Count and display parameters
     model_params = count_parameters(model_net)
     print(f"\nModel parameters: {model_params}")
     print(f"Total parameters: {model_params['total']}")
-    
-    # PPO settings (based on notebook)
-    settings = {
-        'gamma': 0.99,
-        'lambda': 0.95,
-        'clip_eps': 0.2,
-        'ppo_epochs': 2,
-        'batch_size': 64,
-        'update_timesteps': 512,
-        'lr': 1e-4,
-        'val_loss_coef': 0.5 / 100,
-        'ent_loss_coef': 0.001,
-        'device': device,
-        'seed': seed
-    }
     
     print(f"\nPPO Settings:")
     for key, value in settings.items():
@@ -155,8 +158,7 @@ def main():
     print("\nStarting training...")
     start_time = time.time()
     
-    # Train for 25 iterations (as in notebook)
-    training_iterations = 25
+    # Training iterations
     agent.train(env, iterations=training_iterations)
     
     training_time = time.time() - start_time
@@ -176,9 +178,10 @@ def main():
     
     # Save model (optional)
     try:
-        import os
-        os.makedirs("saved_models", exist_ok=True)
-        model_path = f"saved_models/warehouse_stage1_ppo_raycasts_seed{seed}.pth"
+        save_dir = os.path.join("saved_models", "custom", "stage1")
+        os.makedirs(save_dir, exist_ok=True)
+        
+        model_path = os.path.join(save_dir, f"S1_Find_16rays_rew0_100_ppo_seed_{seed}.pth")
         th.save({
             'model_state_dict': agent.model.state_dict(),
             'optimizer_state_dict': agent.optimizer.state_dict(),

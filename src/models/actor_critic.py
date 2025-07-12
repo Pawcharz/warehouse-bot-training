@@ -16,20 +16,20 @@ class ActorCritic(nn.Module):
         
         # Separate policy network
         self.actor = nn.Sequential(
-            nn.Linear(obs_dim, 64),
+            nn.Linear(obs_dim, 128),
             nn.Tanh(),
-            nn.Linear(64, 64),
+            nn.Linear(128, 128),
             nn.Tanh(),
-            nn.Linear(64, act_dim)
+            nn.Linear(128, act_dim)
         )
         
         # Separate value network
         self.critic = nn.Sequential(
-            nn.Linear(obs_dim, 64),
+            nn.Linear(obs_dim, 128),
             nn.Tanh(),
-            nn.Linear(64, 64),
+            nn.Linear(128, 128),
             nn.Tanh(),
-            nn.Linear(64, 1)
+            nn.Linear(128, 1)
         )
         
         # Initialize weights deterministically

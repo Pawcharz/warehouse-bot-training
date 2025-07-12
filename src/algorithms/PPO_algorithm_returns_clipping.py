@@ -1,3 +1,4 @@
+import time
 import torch as th
 import torch.optim as optim
 import numpy as np
@@ -157,7 +158,7 @@ class PPOAgent:
         np.random.seed(seed)
         th.manual_seed(seed)
         th.cuda.manual_seed(seed)
-        th.cuda.manual_seed_all(seed)  # For multi-GPU setups
+        th.cuda.manual_seed_all(seed)
         th.backends.cudnn.deterministic = True
         th.backends.cudnn.benchmark = False
         
@@ -269,6 +270,8 @@ class PPOAgent:
     
     def train(self, env, iterations):
         for iteration in range(iterations):
+            time_start = time.time()
+
             # Reset seeds for this iteration to ensure reproducibility
             self.reset_seed_for_iteration(iteration)
             
@@ -374,7 +377,10 @@ class PPOAgent:
             mean_return = ep_returns_np.mean() if len(ep_returns_np) > 0 else 0.0
             std_return = ep_returns_np.std(ddof=0) if len(ep_returns_np) > 0 else 0.0
 
-            print(f"Iteration {iteration} completed. Episodes: {len(ep_returns)} | "
+            time_end = time.time()
+            time_taken = time_end - time_start
+
+            print(f"Iteration {iteration} completed. Episodes: {len(ep_returns)} | Time taken: {time_taken:.2f}s | "
                   f"Mean Return: {mean_return:.4f} | Std Return: {std_return:.4f} | "
                   f"Mean steps: {mean_steps:.4f} | Std steps: {std_steps:.4f} | "
                   f"Mean losses: total: {mean_losses['total_loss']:.6f}, policy: {mean_losses['policy_loss']:.6f}, value: {mean_losses['value_loss']:.6f}, entropy: {mean_losses['entropy_loss']:.6f}")

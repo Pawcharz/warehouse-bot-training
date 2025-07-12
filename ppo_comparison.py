@@ -15,15 +15,14 @@ import warnings
 import random
 import sys
 import os
-from config import SRC_DIR
+from config import ROOT_DIR
 warnings.filterwarnings('ignore')
 
 # Add src directory to path
-sys.path.insert(0, SRC_DIR)
+sys.path.insert(0, ROOT_DIR)
 
-from algorithms.PPO_algorithm import PPOAgent
-# from algorithms.PPO_algorithm_returns_clipping import PPOAgent
-from models.actor_critic import ActorCritic
+from src.algorithms.PPO_algorithm import PPOAgent
+from src.models.actor_critic import ActorCritic
 
 def set_seed(seed):
     """Set all random seeds for reproducibility"""
@@ -81,10 +80,10 @@ def test_custom_ppo(env_name, seed, iterations=10):
         'update_timesteps': 1024,
         'val_loss_coef': 0.5,
         'ent_loss_coef': 0.01,
-        'seed': seed  # Add seed to settings
+        'seed': seed
     }
     
-    agent = PPOAgent(model_net, settings, seed=seed)  # Pass seed to constructor
+    agent = PPOAgent(model_net, settings, seed=seed)
     
     start_time = time.time()
     agent.train(env, iterations=iterations)
@@ -115,7 +114,7 @@ def test_sb3_ppo(env_name, seed, total_timesteps=10000):
         ent_coef=0.01,
         vf_coef=0.5,
         max_grad_norm=0.5,
-        seed=seed  # Add seed parameter
+        seed=seed
     )
     
     start_time = time.time()

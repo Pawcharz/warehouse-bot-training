@@ -12,14 +12,13 @@ import torch as th
 import gymnasium as gym
 import sys
 import os
-from config import SRC_DIR
+from config import ROOT_DIR
 
 # Add src directory to path
-sys.path.insert(0, SRC_DIR)
+sys.path.insert(0, ROOT_DIR)
 
-# from src.algorithms.PPO_algorithm import PPOAgent
-from algorithms.PPO_algorithm_returns_clipping import PPOAgent
-from models.actor_critic import ActorCritic, count_parameters
+from src.algorithms.PPO_algorithm_returns_clipping import PPOAgent
+from src.models.actor_critic import ActorCritic, count_parameters
 import random
 
 def evaluate_policy(agent, env, num_episodes=10, seed=0):
@@ -99,7 +98,7 @@ def main():
         'update_timesteps': 1024,
         'val_loss_coef': 0.5,
         'ent_loss_coef': 0.01,
-        'seed': seed  # Add seed to settings
+        'seed': seed
     }
     
     # Create PPO agent with seed
