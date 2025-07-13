@@ -9,8 +9,10 @@ statistical comparison of results.
 import time
 import numpy as np
 import torch as th
+import torch.nn as nn
 import gymnasium as gym
 from stable_baselines3 import PPO
+from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
 import warnings
 import random
 import sys
@@ -83,7 +85,6 @@ def test_custom_ppo(env_name, seed, iterations=10):
         'gamma': 0.99,
         'lambda': 0.95,
         'clip_eps': 0.2,
-        'target_kl': 0.01,
         'max_grad_norm': 0.5,
         'ppo_epochs': 4,
         'batch_size': 64,
@@ -91,9 +92,7 @@ def test_custom_ppo(env_name, seed, iterations=10):
         'val_loss_coef': 0.5,
         'ent_loss_coef': 0.01,
         'seed': seed,
-        'use_tensorboard': True,
-        'tensorboard_log_dir': os.path.join(script_dir, "tensorboard_logs"),
-        'experiment_name': f'custom_ppo_{env_name}_seed_{seed}'
+        'use_tensorboard': False,
     }
     
     agent = PPOAgent(model_net, settings, seed=seed)
@@ -112,9 +111,27 @@ def test_sb3_ppo(env_name, seed, total_timesteps=10000):
     set_seed(seed)
     
     env = gym.make(env_name)
+    env = DummyVecEnv([lambda: env])
     
-    # Setup tensorboard logging for SB3
-    sb3_log_dir = os.path.join(script_dir, "tensorboard_logs", f"sb3_ppo_{env_name}_seed_{seed}")
+    # Add reward normalization only
+    env = VecNormalize(
+        env,
+        norm_obs=False,
+        norm_reward=True, # Only normalize rewards
+        clip_obs=np.inf, # No clipping
+        clip_reward=np.inf, # No clipping
+    )
+    
+
+    # Policy kwargs to match custom network architecture exactly
+    policy_kwargs = {
+        "net_arch": {
+            "pi": [128, 128],
+            "vf": [128, 128]
+        },
+        "activation_fn": nn.Tanh,
+        "ortho_init": True,
+    }
     
     model = PPO(
         "MlpPolicy",
@@ -131,7 +148,7 @@ def test_sb3_ppo(env_name, seed, total_timesteps=10000):
         vf_coef=0.5,
         max_grad_norm=0.5,
         seed=seed,
-        tensorboard_log=sb3_log_dir
+        policy_kwargs=policy_kwargs
     )
     
     start_time = time.time()
@@ -139,17 +156,18 @@ def test_sb3_ppo(env_name, seed, total_timesteps=10000):
     training_time = time.time() - start_time
     
     # Evaluate
+    env.norm_reward = False  # Disable reward normalization for evaluation
     eval_returns = []
     for episode in range(10):
-        obs, _ = env.reset(seed=seed + episode)
+        obs = env.reset()
         episode_return = 0
         done = False
         
         while not done:
             action, _ = model.predict(obs, deterministic=True)
-            obs, reward, terminated, truncated, _ = env.step(action)
-            episode_return += reward
-            done = terminated or truncated
+            obs, reward, done, info = env.step(action)
+            episode_return += reward[0]
+            done = done[0]
         
         eval_returns.append(episode_return)
     
@@ -170,8 +188,21 @@ def run_comparison(env_name, seeds, custom_iterations=10, sb3_timesteps=10000):
         print(f"  Seed {seed} ({i+1}/{len(seeds)})...", end=" ")
         
         try:
-            custom_mean, custom_std, custom_time = test_custom_ppo(env_name, seed, custom_iterations)
             sb3_mean, sb3_std, sb3_time = test_sb3_ppo(env_name, seed, sb3_timesteps)
+            custom_mean, custom_std, custom_time = test_custom_ppo(env_name, seed, custom_iterations)
+
+            writer.add_scalars(f'{env_name}/mean_returns', {
+                'Custom_PPO': custom_mean,
+                'SB3_PPO': sb3_mean
+            }, i)
+            writer.add_scalars(f'{env_name}/mean_stds', {
+                'Custom_PPO': custom_std,
+                'SB3_PPO': sb3_std
+            }, i)
+            writer.add_scalars(f'{env_name}/mean_times', {
+                'Custom_PPO': custom_time,
+                'SB3_PPO': sb3_time
+            }, i)
             
             custom_results.append({
                 'mean': custom_mean,
@@ -185,20 +216,12 @@ def run_comparison(env_name, seeds, custom_iterations=10, sb3_timesteps=10000):
                 'time': sb3_time
             })
             
-            # Log individual seed results
-            writer.add_scalar(f'Seeds/{env_name}/Custom_Return_Seed_{seed}', custom_mean, i)
-            writer.add_scalar(f'Seeds/{env_name}/SB3_Return_Seed_{seed}', sb3_mean, i)
-            writer.add_scalar(f'Seeds/{env_name}/Custom_Time_Seed_{seed}', custom_time, i)
-            writer.add_scalar(f'Seeds/{env_name}/SB3_Time_Seed_{seed}', sb3_time, i)
-            
-            print(f"✓")
-            
         except Exception as e:
-            print(f"✗ ({str(e)})")
+            print(f"Error: {str(e)}")
             continue
     
     if not custom_results or not sb3_results:
-        print(f"  ❌ No successful runs for {env_name}")
+        print(f"No successful runs for {env_name}")
         return None
     
     # Calculate statistics
@@ -224,16 +247,20 @@ def run_comparison(env_name, seeds, custom_iterations=10, sb3_timesteps=10000):
     print(f"  Custom PPO: {custom_mean_of_means:.1f} ± {custom_std_of_means:.1f} (eval_std: {custom_mean_of_stds:.1f}, time: {custom_mean_time:.1f}s)")
     print(f"  SB3 PPO:    {sb3_mean_of_means:.1f} ± {sb3_std_of_means:.1f} (eval_std: {sb3_mean_of_stds:.1f}, time: {sb3_mean_time:.1f}s)")
     
-    # Log comparison results to tensorboard
-    writer.add_scalar(f'Comparison/{env_name}/Custom_Mean_Return', custom_mean_of_means, 0)
-    writer.add_scalar(f'Comparison/{env_name}/Custom_Std_Return', custom_std_of_means, 0)
-    writer.add_scalar(f'Comparison/{env_name}/Custom_Mean_Time', custom_mean_time, 0)
-    writer.add_scalar(f'Comparison/{env_name}/SB3_Mean_Return', sb3_mean_of_means, 0)
-    writer.add_scalar(f'Comparison/{env_name}/SB3_Std_Return', sb3_std_of_means, 0)
-    writer.add_scalar(f'Comparison/{env_name}/SB3_Mean_Time', sb3_mean_time, 0)
-    writer.add_scalar(f'Comparison/{env_name}/Speed_Ratio', custom_mean_time / sb3_mean_time, 0)
-    writer.add_scalar(f'Comparison/{env_name}/Performance_Difference', custom_mean_of_means - sb3_mean_of_means, 0)
-    
+    writer.add_scalars(f'{env_name}/mean_returns/all_runs', {
+        'Custom_PPO': custom_mean_of_means,
+        'SB3_PPO': sb3_mean_of_means
+    }, 0)
+    writer.add_scalars(f'{env_name}/mean_stds/all_runs', {
+        'Custom_PPO': custom_std_of_means,
+        'SB3_PPO': sb3_std_of_means
+    }, 0)
+    writer.add_scalars(f'{env_name}/mean_times/all_runs', {
+        'Custom_PPO': custom_mean_time,
+        'SB3_PPO': sb3_mean_time
+    }, 0)
+    writer.close()
+
     return {
         'env_name': env_name,
         'custom_mean_of_means': custom_mean_of_means,
@@ -255,14 +282,17 @@ def main():
     print("=" * 60)
     
     # Configuration
-    seeds = range(10) # 10 different seeds
+    seeds = range(10)
     custom_iterations = 10
     sb3_timesteps = 10000
     
     environments = ["CartPole-v1", "Acrobot-v1"]
-    
+
+    print(f"Environments to test: {environments}")
     print(f"Seeds: {seeds}")
+
     print(f"Config: {custom_iterations} iterations vs {sb3_timesteps} timesteps")
+    print(f"Tensorboard logs saved to: {log_dir}")
     
     # Run comparisons
     all_results = []
@@ -273,7 +303,7 @@ def main():
             all_results.append(result)
     
     if not all_results:
-        print("\n❌ No successful comparisons completed")
+        print("\nNo successful comparisons completed")
         return
     
     # Summary statistics
@@ -281,63 +311,20 @@ def main():
     print("SUMMARY STATISTICS")
     print(f"{'='*60}")
     
-    # Overall performance comparison
-    custom_wins = sum(1 for r in all_results if r['performance_winner'] == 'custom')
-    sb3_wins = sum(1 for r in all_results if r['performance_winner'] == 'sb3')
-    ties = sum(1 for r in all_results if r['performance_winner'] == 'tie')
-    
-    # Average performance across all environments
-    avg_custom_return = np.mean([r['custom_mean_of_means'] for r in all_results])
-    avg_sb3_return = np.mean([r['sb3_mean_of_means'] for r in all_results])
-    avg_speed_ratio = np.mean([r['speed_ratio'] for r in all_results])
-    
-    print(f"Environments tested: {len(all_results)}")
-    print(f"Successful runs per environment: {all_results[0]['n_runs']}")
-    print()
-    print(f"Performance Wins:")
-    print(f"  Custom PPO: {custom_wins}")
-    print(f"  SB3 PPO: {sb3_wins}")
-    print(f"  Ties: {ties}")
-    print()
-    print(f"Average Returns (across environments):")
-    print(f"  Custom PPO: {avg_custom_return:.2f}")
-    print(f"  SB3 PPO: {avg_sb3_return:.2f}")
-    print()
-    print(f"Average speed ratio: {avg_speed_ratio:.2f}x")
-    print(f"  (Custom PPO is {'slower' if avg_speed_ratio > 1 else 'faster'} on average)")
-    
-    # Log overall summary statistics to tensorboard
-    writer.add_scalar('Summary/Custom_Wins', custom_wins, 0)
-    writer.add_scalar('Summary/SB3_Wins', sb3_wins, 0)
-    writer.add_scalar('Summary/Ties', ties, 0)
-    writer.add_scalar('Summary/Average_Custom_Return', avg_custom_return, 0)
-    writer.add_scalar('Summary/Average_SB3_Return', avg_sb3_return, 0)
-    writer.add_scalar('Summary/Average_Speed_Ratio', avg_speed_ratio, 0)
-    writer.add_scalar('Summary/Performance_Difference', avg_custom_return - avg_sb3_return, 0)
-    
     # Detailed results table
     print(f"\n{'='*100}")
     print("DETAILED RESULTS")
     print(f"{'='*100}")
-    print(f"{'Environment':<15} {'Custom (μ±σ)':<20} {'SB3 (μ±σ)':<20} {'Winner':<10} {'Speed':<10} {'Runs':<5}")
+    print(f"{'Environment':<15} {'Custom (mean +- std)':<20} {'SB3 (mean +- std)':<20} {'Speed':<10} {'Runs':<5}")
     print(f"{'-'*100}")
     
     for result in all_results:
-        winner_symbol = {
-            'custom': '✅ Custom',
-            'sb3': '❌ SB3',
-            'tie': '🤝 Tie'
-        }[result['performance_winner']]
         
         custom_str = f"{result['custom_mean_of_means']:.1f}±{result['custom_std_of_means']:.1f}"
         sb3_str = f"{result['sb3_mean_of_means']:.1f}±{result['sb3_std_of_means']:.1f}"
         speed_str = f"{result['speed_ratio']:.1f}x"
         
-        print(f"{result['env_name']:<15} {custom_str:<20} {sb3_str:<20} {winner_symbol:<10} {speed_str:<10} {result['n_runs']:<5}")
-    
-    # Close tensorboard writer
-    writer.close()
-    print(f"\nTensorboard logs saved to: {log_dir}")
+        print(f"{result['env_name']:<15} {custom_str:<20} {sb3_str:<20} {speed_str:<10} {result['n_runs']:<5}")
 
 if __name__ == "__main__":
     main() 

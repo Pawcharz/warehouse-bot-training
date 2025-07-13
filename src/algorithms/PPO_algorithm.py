@@ -103,7 +103,6 @@ class PPOAgent:
 
         # PPO specific settings
         self.clip_eps = settings.get('clip_eps', 0.2)
-        self.value_clip_eps = settings.get('value_clip_eps', 0.2)  # Separate clipping for value function
         self.max_grad_norm = settings.get('max_grad_norm', 0.5)
         
         # Store other settings as instance variables for logging
@@ -121,7 +120,7 @@ class PPOAgent:
         
         # Initialize TensorBoard logger
         self.logger = None
-        if settings.get('use_tensorboard', True):
+        if settings.get('use_tensorboard', False):
             log_dir = settings.get('tensorboard_log_dir', 'runs/ppo_training')
             experiment_name = settings.get('experiment_name', f'ppo_seed_{seed}')
             full_log_dir = os.path.join(log_dir, experiment_name)

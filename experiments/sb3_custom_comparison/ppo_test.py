@@ -92,7 +92,6 @@ def main():
         'gamma': 0.99,
         'lambda': 0.95,
         'clip_eps': 0.2,
-        'target_kl': 0.01,
         'max_grad_norm': 0.5,
         'ppo_epochs': 4,
         'batch_size': 64,
