@@ -15,14 +15,24 @@ import warnings
 import random
 import sys
 import os
-from config import ROOT_DIR
+from datetime import datetime
+from torch.utils.tensorboard import SummaryWriter
 warnings.filterwarnings('ignore')
+
+# Get the root directory (two levels up from this script)
+script_dir = os.path.dirname(os.path.abspath(__file__))
+ROOT_DIR = os.path.dirname(os.path.dirname(script_dir))
 
 # Add src directory to path
 sys.path.insert(0, ROOT_DIR)
 
 from src.algorithms.PPO_algorithm import PPOAgent
 from src.models.actor_critic import ActorCritic
+
+# Setup tensorboard logging
+log_dir = os.path.join(script_dir, "tensorboard_logs")
+os.makedirs(log_dir, exist_ok=True)
+writer = SummaryWriter(log_dir=log_dir)
 
 def set_seed(seed):
     """Set all random seeds for reproducibility"""
@@ -80,7 +90,10 @@ def test_custom_ppo(env_name, seed, iterations=10):
         'update_timesteps': 1024,
         'val_loss_coef': 0.5,
         'ent_loss_coef': 0.01,
-        'seed': seed
+        'seed': seed,
+        'use_tensorboard': True,
+        'tensorboard_log_dir': os.path.join(script_dir, "tensorboard_logs"),
+        'experiment_name': f'custom_ppo_{env_name}_seed_{seed}'
     }
     
     agent = PPOAgent(model_net, settings, seed=seed)
@@ -100,6 +113,9 @@ def test_sb3_ppo(env_name, seed, total_timesteps=10000):
     
     env = gym.make(env_name)
     
+    # Setup tensorboard logging for SB3
+    sb3_log_dir = os.path.join(script_dir, "tensorboard_logs", f"sb3_ppo_{env_name}_seed_{seed}")
+    
     model = PPO(
         "MlpPolicy",
         env,
@@ -114,7 +130,8 @@ def test_sb3_ppo(env_name, seed, total_timesteps=10000):
         ent_coef=0.01,
         vf_coef=0.5,
         max_grad_norm=0.5,
-        seed=seed
+        seed=seed,
+        tensorboard_log=sb3_log_dir
     )
     
     start_time = time.time()
@@ -168,6 +185,12 @@ def run_comparison(env_name, seeds, custom_iterations=10, sb3_timesteps=10000):
                 'time': sb3_time
             })
             
+            # Log individual seed results
+            writer.add_scalar(f'Seeds/{env_name}/Custom_Return_Seed_{seed}', custom_mean, i)
+            writer.add_scalar(f'Seeds/{env_name}/SB3_Return_Seed_{seed}', sb3_mean, i)
+            writer.add_scalar(f'Seeds/{env_name}/Custom_Time_Seed_{seed}', custom_time, i)
+            writer.add_scalar(f'Seeds/{env_name}/SB3_Time_Seed_{seed}', sb3_time, i)
+            
             print(f"✓")
             
         except Exception as e:
@@ -200,6 +223,16 @@ def run_comparison(env_name, seeds, custom_iterations=10, sb3_timesteps=10000):
     
     print(f"  Custom PPO: {custom_mean_of_means:.1f} ± {custom_std_of_means:.1f} (eval_std: {custom_mean_of_stds:.1f}, time: {custom_mean_time:.1f}s)")
     print(f"  SB3 PPO:    {sb3_mean_of_means:.1f} ± {sb3_std_of_means:.1f} (eval_std: {sb3_mean_of_stds:.1f}, time: {sb3_mean_time:.1f}s)")
+    
+    # Log comparison results to tensorboard
+    writer.add_scalar(f'Comparison/{env_name}/Custom_Mean_Return', custom_mean_of_means, 0)
+    writer.add_scalar(f'Comparison/{env_name}/Custom_Std_Return', custom_std_of_means, 0)
+    writer.add_scalar(f'Comparison/{env_name}/Custom_Mean_Time', custom_mean_time, 0)
+    writer.add_scalar(f'Comparison/{env_name}/SB3_Mean_Return', sb3_mean_of_means, 0)
+    writer.add_scalar(f'Comparison/{env_name}/SB3_Std_Return', sb3_std_of_means, 0)
+    writer.add_scalar(f'Comparison/{env_name}/SB3_Mean_Time', sb3_mean_time, 0)
+    writer.add_scalar(f'Comparison/{env_name}/Speed_Ratio', custom_mean_time / sb3_mean_time, 0)
+    writer.add_scalar(f'Comparison/{env_name}/Performance_Difference', custom_mean_of_means - sb3_mean_of_means, 0)
     
     return {
         'env_name': env_name,
@@ -273,6 +306,15 @@ def main():
     print(f"Average speed ratio: {avg_speed_ratio:.2f}x")
     print(f"  (Custom PPO is {'slower' if avg_speed_ratio > 1 else 'faster'} on average)")
     
+    # Log overall summary statistics to tensorboard
+    writer.add_scalar('Summary/Custom_Wins', custom_wins, 0)
+    writer.add_scalar('Summary/SB3_Wins', sb3_wins, 0)
+    writer.add_scalar('Summary/Ties', ties, 0)
+    writer.add_scalar('Summary/Average_Custom_Return', avg_custom_return, 0)
+    writer.add_scalar('Summary/Average_SB3_Return', avg_sb3_return, 0)
+    writer.add_scalar('Summary/Average_Speed_Ratio', avg_speed_ratio, 0)
+    writer.add_scalar('Summary/Performance_Difference', avg_custom_return - avg_sb3_return, 0)
+    
     # Detailed results table
     print(f"\n{'='*100}")
     print("DETAILED RESULTS")
@@ -292,6 +334,10 @@ def main():
         speed_str = f"{result['speed_ratio']:.1f}x"
         
         print(f"{result['env_name']:<15} {custom_str:<20} {sb3_str:<20} {winner_symbol:<10} {speed_str:<10} {result['n_runs']:<5}")
+    
+    # Close tensorboard writer
+    writer.close()
+    print(f"\nTensorboard logs saved to: {log_dir}")
 
 if __name__ == "__main__":
     main() 

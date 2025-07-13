@@ -12,12 +12,13 @@ import torch as th
 import gymnasium as gym
 import sys
 import os
-from config import ROOT_DIR
 
-# Add src directory to path
-sys.path.insert(0, ROOT_DIR)
+# Add root directory to path to find config module
+current_dir = os.path.dirname(os.path.abspath(__file__))
+root_dir = os.path.dirname(os.path.dirname(current_dir))
+sys.path.insert(0, root_dir)
 
-from src.algorithms.PPO_algorithm_returns_clipping import PPOAgent
+from src.algorithms.PPO_algorithm import PPOAgent
 from src.models.actor_critic import ActorCritic, count_parameters
 import random
 

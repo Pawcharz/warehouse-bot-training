@@ -15,6 +15,13 @@ from torch import multiprocessing
 import numpy as np
 import random
 import os
+import sys
+
+# Add root directory to path to find config module
+current_dir = os.path.dirname(os.path.abspath(__file__))
+root_dir = os.path.dirname(os.path.dirname(current_dir))
+if root_dir not in sys.path:
+    sys.path.insert(0, root_dir)
 
 # Environment imports
 from mlagents_envs.side_channel.engine_configuration_channel import EngineConfigurationChannel
