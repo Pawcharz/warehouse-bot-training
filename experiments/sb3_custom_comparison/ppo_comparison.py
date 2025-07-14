@@ -76,7 +76,6 @@ def test_custom_ppo(env_name, seed, iterations=10):
     env = gym.make(env_name)
     obs_dim = env.observation_space.shape[0]
     act_dim = env.action_space.n
-    
     model_net = ActorCritic(obs_dim, act_dim)
     
     settings = {
@@ -94,7 +93,6 @@ def test_custom_ppo(env_name, seed, iterations=10):
         'seed': seed,
         'use_tensorboard': False,
     }
-    
     agent = PPOAgent(model_net, settings, seed=seed)
     
     start_time = time.time()
@@ -106,7 +104,7 @@ def test_custom_ppo(env_name, seed, iterations=10):
     env.close()
     return mean_return, std_return, training_time
 
-def test_sb3_ppo(env_name, seed, total_timesteps=10000):
+def test_sb3_ppo(env_name, seed, total_timesteps=10240):
     """Test SB3 PPO implementation"""
     set_seed(seed)
     
@@ -177,7 +175,7 @@ def test_sb3_ppo(env_name, seed, total_timesteps=10000):
     env.close()
     return mean_return, std_return, training_time
 
-def run_comparison(env_name, seeds, custom_iterations=10, sb3_timesteps=10000):
+def run_comparison(env_name, seeds, custom_iterations=10, sb3_timesteps=10240):
     """Run comparison for one environment across multiple seeds"""
     print(f"\n{env_name}:")
     
@@ -188,8 +186,8 @@ def run_comparison(env_name, seeds, custom_iterations=10, sb3_timesteps=10000):
         print(f"  Seed {seed} ({i+1}/{len(seeds)})...", end=" ")
         
         try:
-            sb3_mean, sb3_std, sb3_time = test_sb3_ppo(env_name, seed, sb3_timesteps)
             custom_mean, custom_std, custom_time = test_custom_ppo(env_name, seed, custom_iterations)
+            sb3_mean, sb3_std, sb3_time = test_sb3_ppo(env_name, seed, sb3_timesteps)
 
             writer.add_scalars(f'{env_name}/mean_returns', {
                 'Custom_PPO': custom_mean,
@@ -282,9 +280,9 @@ def main():
     print("=" * 60)
     
     # Configuration
-    seeds = range(10)
-    custom_iterations = 10
-    sb3_timesteps = 10000
+    seeds = range(20)
+    custom_iterations = [10, 10]
+    sb3_timesteps = [10240, 10240] # 10 * 1024 to match custom PPO
     
     environments = ["CartPole-v1", "Acrobot-v1"]
 
@@ -297,8 +295,8 @@ def main():
     # Run comparisons
     all_results = []
     
-    for env_name in environments:
-        result = run_comparison(env_name, seeds, custom_iterations, sb3_timesteps)
+    for i, env_name in enumerate(environments):
+        result = run_comparison(env_name, seeds, custom_iterations[i], sb3_timesteps[i])
         if result:
             all_results.append(result)
     

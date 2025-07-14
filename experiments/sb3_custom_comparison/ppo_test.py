@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Simple PPO Test Script for CartPole-v1
+Simple PPO Test Script
 
-A basic script to test custom PPO implementation on CartPole-v1
+A basic script to test custom PPO implementation
 and log evaluation results after training.
 """
 
@@ -50,7 +50,7 @@ def evaluate_policy(agent, env, num_episodes=10, seed=0):
     return np.mean(returns), np.std(returns)
 
 def main():
-    print("Starting PPO CartPole-v1 Test...")
+    print("Starting PPO Test...")
     
     # Setup
     device = th.device("cuda" if th.cuda.is_available() else "cpu")
