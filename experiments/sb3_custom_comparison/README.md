@@ -1,4 +1,4 @@
-THis is an experiment comparing results of 2 PPO implementations: my custom PPO at `src/algorithms/PPO_algorithm.py` with stable-baselines-3 implementation.
+This is an experiment comparing results of 2 PPO implementations: my custom PPO at `src/algorithms/PPO_algorithm.py` with stable-baselines-3 implementation.
 
 ## Setup
 
@@ -647,8 +647,8 @@ def run_comparison(env_name, seeds, custom_iterations=10, sb3_timesteps=10240):
     sb3_mean_of_stds = np.mean(sb3_stds)
     sb3_mean_time = np.mean(sb3_times)
     
-    print(f"  Custom PPO: {custom_mean_of_means:.1f} ± {custom_std_of_means:.1f} (eval_std: {custom_mean_of_stds:.1f}, time: {custom_mean_time:.1f}s)")
-    print(f"  SB3 PPO:    {sb3_mean_of_means:.1f} ± {sb3_std_of_means:.1f} (eval_std: {sb3_mean_of_stds:.1f}, time: {sb3_mean_time:.1f}s)")
+    print(f"  Custom PPO: {custom_mean_of_means:.1f} +- {custom_std_of_means:.1f} (eval_std: {custom_mean_of_stds:.1f}, time: {custom_mean_time:.1f}s)")
+    print(f"  SB3 PPO:    {sb3_mean_of_means:.1f} +- {sb3_std_of_means:.1f} (eval_std: {sb3_mean_of_stds:.1f}, time: {sb3_mean_time:.1f}s)")
     
     writer.add_scalars(f'{env_name}/mean_returns/all_runs', {
         'Custom_PPO': custom_mean_of_means,
@@ -723,8 +723,8 @@ def main():
     
     for result in all_results:
         
-        custom_str = f"{result['custom_mean_of_means']:.1f}±{result['custom_std_of_means']:.1f}"
-        sb3_str = f"{result['sb3_mean_of_means']:.1f}±{result['sb3_std_of_means']:.1f}"
+        custom_str = f"{result['custom_mean_of_means']:.1f}+-{result['custom_std_of_means']:.1f}"
+        sb3_str = f"{result['sb3_mean_of_means']:.1f}+-{result['sb3_std_of_means']:.1f}"
         speed_str = f"{result['speed_ratio']:.1f}x"
         
         print(f"{result['env_name']:<15} {custom_str:<20} {sb3_str:<20} {speed_str:<10} {result['n_runs']:<5}")
@@ -772,7 +772,9 @@ self.critic = nn.Sequential(
 ```
 
 ### Results
-Results of the comparison can be found at `experiments/sb3_custom_comparison/tensorboard_logs` and can be run with following command: `tensorboard --logdir=<path>` where path is absolute path to tensorboard_logs
+Results of the comparison can be found at `experiments/sb3_custom_comparison/tensorboard_logs` and can be run with following command: `tensorboard --logdir=<path>` where path is absolute path to tensorboard_logs.
+
+The final outputs of the training are following:
 
 ## Conclusions
 add here

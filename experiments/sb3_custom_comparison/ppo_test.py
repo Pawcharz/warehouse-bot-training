@@ -120,7 +120,7 @@ def main():
     print(f"\n=== RESULTS ===")
     print(f"Training iterations: 10")
     print(f"Training time: {training_time:.2f} seconds")
-    print(f"Mean evaluation return: {mean_return:.2f} ± {std_return:.2f}")
+    print(f"Mean evaluation return: {mean_return:.2f} +- {std_return:.2f}")
     print(f"Max possible return: 500")
     print(f"Performance: {mean_return/500*100:.1f}% of max")
     
