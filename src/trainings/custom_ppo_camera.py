@@ -29,7 +29,7 @@ from src.environments.env_utils import make_env
 # Algorithm imports
 from src.algorithms.PPO_algorithm import PPOAgent
 # from src.algorithms.PPO_algorithm_returns_clipping import PPOAgent
-from src.models.actor_critic import ActorCritic
+from src.models.actor_critic_multimodal import ActorCriticMultimodal
 from src.models.model_utils import count_parameters, save_model_checkpoint, create_model_filename, get_default_save_dir
 
 def evaluate_policy(agent, env, num_episodes=10, seed=0):
@@ -76,13 +76,16 @@ def main():
     
     # Create environment
     print("\nCreating environment...")
-    env = make_env(time_scale=6, no_graphics=True, verbose=True, env_type="raycasts")
+    env = make_env(time_scale=1, no_graphics=False, verbose=True, env_type="multimodal", env_path='environment_builds/stage2/S2_Find_Items_64x36camera120deg_rew0_100/Warehouse_Bot.exe')
     
+    print(env.observation_space)
     # Get environment dimensions
-    obs_dim = env.observation_space.shape[0]
+    obs_dim_visual = env.observation_space['visual'].shape
+    obs_dim_vector = env.observation_space['vector'].shape[0]
     act_dim = env.action_space.n
     
-    print(f"Observation dimension: {obs_dim}")
+    print(f"Observation dimension: {obs_dim_vector}")
+    print(f"Observation dimension: {obs_dim_visual}")
     print(f"Action dimension: {act_dim}")
     
     # Set seed for reproducibility
@@ -111,14 +114,14 @@ def main():
         'ent_loss_coef': 0.01,
         'device': device,
         'seed': seed,
-        'use_tensorboard': True,
-        'tensorboard_log_dir': 'logs/stage1/S1_Find_Deliver_16rays_rew0_100_200_speed6x',
-        'experiment_name': f'ppo_seed_{seed}'
+        # 'use_tensorboard': True,
+        # 'tensorboard_log_dir': 'logs/stage2/S2_Find_Items_64x36camera120deg_rew0_100',
+        # 'experiment_name': f'ppo_seed_{seed}'
     }
     training_iterations = 800
 
     # Create model
-    model_net = ActorCritic(obs_dim, act_dim)
+    model_net = ActorCriticMultimodal(act_dim, visual_obs_size=obs_dim_visual, vector_obs_size=obs_dim_vector, device=device)
     
     # Count and display parameters
     model_params = count_parameters(model_net)
@@ -158,7 +161,7 @@ def main():
     # Save model (optional)
     try:
         save_dir = get_default_save_dir("custom", "stage1")
-        filename = create_model_filename("S1_Find_Deliver_16rays_rew0_100_200_speed6x_ppo", seed)
+        filename = create_model_filename("S2_Find_Items_64x36camera120deg_rew0_100", seed)
         
         model_path = save_model_checkpoint(
             model=agent.model,

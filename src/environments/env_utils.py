@@ -25,7 +25,6 @@ from pathlib import Path
 # Environment imports
 from mlagents_envs.side_channel.engine_configuration_channel import EngineConfigurationChannel
 from mlagents_envs.environment import UnityEnvironment
-from src.environments.env_raycasts_gymnasium_wrapper import UnityRaycastsGymWrapper
 
 # Add root directory to path to find config module
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -35,27 +34,26 @@ if root_dir not in sys.path:
 
 from config import ROOT_DIR
 
-def make_env(env_path=None, time_scale=6, no_graphics=True, verbose=True, env_type="raycasts"):
+def make_env(env_path=None, time_scale=6, no_graphics=True, verbose=True, env_type="vector"):
     """
     Create and configure the Unity environment
     
     Args:
         env_path (str, optional): Path to the Unity environment executable.
-                                 If None, uses the default training environment.
+                           If None, uses the default training environment.
         time_scale (float): Time scale for simulation (1.0 = real-time, higher = faster).
                            Default is 6 for training speed.
         no_graphics (bool): Whether to disable graphics rendering.
                            Default is True for training (faster).
         verbose (bool): Whether to print debug information.
         env_type (str): Type of environment wrapper to use.
-                       Options: "raycasts", "camera_raycasts", "camera"
+                       Options: "vector", "multimodal"
     
     Returns:
-        UnityRaycastsGymWrapper or UnityCameraRaycastsGymWrapper: Configured gymnasium environment
+        UnityVectorGymWrapper or UnityMultimodalGymWrapper: Configured gymnasium environment
     """
     if env_path is None:
-        # Default environment path for training
-        env_path = os.path.join(ROOT_DIR, "environment_builds/stage1/S1_Find_Deliver_16rays_rew0_100_200/Warehouse_Bot.exe")
+        raise ValueError("env_path must be specified. Please provide the path to the Unity environment executable.")
     
     if verbose:
         print(f"Looking for environment at: {env_path}")
@@ -73,17 +71,14 @@ def make_env(env_path=None, time_scale=6, no_graphics=True, verbose=True, env_ty
     channel.set_configuration_parameters(time_scale=time_scale)
     
     # Choose appropriate wrapper based on env_type
-    if env_type == "raycasts":
-        from src.environments.env_raycasts_gymnasium_wrapper import UnityRaycastsGymWrapper
-        gymnasium_env = UnityRaycastsGymWrapper(unity_env)
-    elif env_type == "camera_raycasts":
-        from src.environments.env_camera_raycasts_gymnasium_wrapper import UnityCameraRaycastsGymWrapper
-        gymnasium_env = UnityCameraRaycastsGymWrapper(unity_env)
-    elif env_type == "camera":
-        from src.environments.env_camera_gymnasium_wrapper import UnityCameraGymWrapper
-        gymnasium_env = UnityCameraGymWrapper(unity_env)
+    if env_type == "vector":
+        from src.environments.env_vector_gymnasium_wrapper import UnityVectorGymWrapper
+        gymnasium_env = UnityVectorGymWrapper(unity_env)
+    elif env_type == "multimodal":
+        from src.environments.env_multimodal_gymnasium_wrapper import UnityMultimodalGymWrapper
+        gymnasium_env = UnityMultimodalGymWrapper(unity_env)
     else:
-        raise ValueError(f"Unknown env_type: {env_type}. Must be one of: raycasts, camera_raycasts, camera")
+        raise ValueError(f"Unknown env_type: {env_type}. Must be one of: vector, multimodal")
     
     if verbose:
         print(f"Observation space: {gymnasium_env.observation_space}")

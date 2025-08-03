@@ -4,7 +4,7 @@ from mlagents_envs.environment import UnityEnvironment
 from mlagents_envs.base_env import ActionTuple
 import gymnasium as gym
 
-class UnityRaycastsGymWrapper(gym.Env):
+class UnityVectorGymWrapper(gym.Env):
     def __init__(self, unity_env, seed=None):
         super().__init__()
         self.unity_env = unity_env

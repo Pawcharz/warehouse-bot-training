@@ -4,7 +4,7 @@ from gymnasium import spaces
 from mlagents_envs.environment import UnityEnvironment
 from mlagents_envs.base_env import ActionTuple
 
-class UnityCameraRaycastsGymWrapper(gym.Env):
+class UnityMultimodalGymWrapper(gym.Env):
     def __init__(self, unity_env, seed=None):
         super().__init__()
         self.unity_env = unity_env
@@ -17,7 +17,7 @@ class UnityCameraRaycastsGymWrapper(gym.Env):
         vec_obs_shape = self.spec.observation_specs[1].shape
         # self.observation_space = spaces.Box(low=0, high=255, shape=vec_obs_shape, dtype=np.uint8) # ???
         self.observation_space = spaces.Dict({
-            "image": spaces.Box(low=0, high=255, shape=vis_obs_shape, dtype=np.uint8),
+            "visual": spaces.Box(low=0, high=255, shape=vis_obs_shape, dtype=np.uint8),
             "vector": spaces.Box(low=0, high=255, shape=vec_obs_shape, dtype=np.float32)
         })
         
@@ -30,7 +30,7 @@ class UnityCameraRaycastsGymWrapper(gym.Env):
         self.unity_env.reset()
         decision_steps, _ = self.unity_env.get_steps(self.behavior_name)
         
-        observation = {"image": decision_steps.obs[0], "vector": decision_steps.obs[1]}
+        observation = {"visual": decision_steps.obs[0], "vector": decision_steps.obs[1]}
         # observation = decision_steps.obs[1]
         return observation, {}
 
@@ -46,7 +46,7 @@ class UnityCameraRaycastsGymWrapper(gym.Env):
         decision_steps, terminal_steps = self.unity_env.get_steps(self.behavior_name)
 
         if 0 in terminal_steps:
-            obs = {"image": terminal_steps.obs[0], "vector": terminal_steps.obs[1]}
+            obs = {"visual": terminal_steps.obs[0], "vector": terminal_steps.obs[1]}
             # obs = terminal_steps.obs[1]
             reward = terminal_steps.reward[0]
             
@@ -59,7 +59,7 @@ class UnityCameraRaycastsGymWrapper(gym.Env):
             
             # terminated and truncated are mutually exclusive
         else:
-            obs = {"image": decision_steps.obs[0], "vector": decision_steps.obs[1]}
+            obs = {"visual": decision_steps.obs[0], "vector": decision_steps.obs[1]}
             # obs = decision_steps.obs[1]
             reward = decision_steps.reward[0]
             terminated = False

@@ -235,4 +235,25 @@ def get_default_save_dir(experiment_type: str = "custom", stage: str = "stage1")
     Returns:
         str: Default save directory path
     """
-    return os.path.join("saved_models", experiment_type, stage) 
+    return os.path.join("saved_models", experiment_type, stage)
+
+def count_parameters(model):
+    """
+    Count parameters in each block of the network and total parameters.
+    
+    Args:
+        model: PyTorch model
+        
+    Returns:
+        dict: Dictionary containing parameter counts for each block and total
+    """
+    total_params = 0
+    block_params = {}
+    
+    for name, module in model.named_children():
+        params = sum(p.numel() for p in module.parameters())
+        block_params[name] = params
+        total_params += params
+        
+    block_params['total'] = total_params
+    return block_params 

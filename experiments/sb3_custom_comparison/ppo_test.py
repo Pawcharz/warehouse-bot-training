@@ -19,7 +19,8 @@ root_dir = os.path.dirname(os.path.dirname(current_dir))
 sys.path.insert(0, root_dir)
 
 from src.algorithms.PPO_algorithm import PPOAgent
-from src.models.actor_critic import ActorCritic, count_parameters
+from src.models.actor_critic import ActorCritic
+from src.models.model_utils import count_parameters
 import random
 
 def evaluate_policy(agent, env, num_episodes=10, seed=0):
