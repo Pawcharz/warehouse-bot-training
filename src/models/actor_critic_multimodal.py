@@ -4,10 +4,6 @@ import torch.nn as nn
 from torch.distributions import Categorical
 import numpy as np
 
-class Swish(nn.Module):
-    def forward(self, x):
-        return x * th.sigmoid(x)
-
 # Actor-Critic Network for multimodal observations with separate policy and value networks
 class ActorCriticMultimodal(nn.Module):
     def __init__(self, act_dim, visual_obs_size, vector_obs_size, device=None):
@@ -22,12 +18,15 @@ class ActorCriticMultimodal(nn.Module):
 
         # Visual Encoder (shared between policy and value)
         self.visual_encoder_cnn = nn.Sequential(
-            nn.Conv2d(bands, 16, kernel_size=5, stride=4, padding=0),
-            nn.LeakyReLU(0.01),
+            nn.Conv2d(bands, 6, kernel_size=5, stride=1, padding=0),
+            nn.Tanh(),
+            nn.AvgPool2d(kernel_size=2, stride=2),
+            nn.Conv2d(6, 16, kernel_size=5, stride=1, padding=0),
+            nn.Tanh(),
+            nn.AvgPool2d(kernel_size=2, stride=2),
             nn.Conv2d(16, 32, kernel_size=3, stride=2, padding=1),
-            nn.LeakyReLU(0.01),
-            nn.Conv2d(32, 32, kernel_size=3, stride=2, padding=1),
-            nn.LeakyReLU(0.01),
+            nn.Tanh(),
+            nn.AvgPool2d(kernel_size=2, stride=2),
             nn.Flatten(),
         )
 
@@ -38,15 +37,17 @@ class ActorCriticMultimodal(nn.Module):
 
         self.visual_encoder_mlp = nn.Sequential(
             nn.Linear(visual_encoder_cnn_out_size, 64),
-            Swish(),
-            nn.Linear(64, visual_out_size),
-            Swish()
+            nn.Tanh(),
+            nn.Linear(64, 32),
+            nn.Tanh(),
+            nn.Linear(32, visual_out_size),
+            nn.Tanh()
         )
         
         # Vector Encoder (shared between policy and value)
         self.vector_encoder = nn.Sequential(
             nn.Linear(vector_obs_size, vector_out_size),
-            Swish(),
+            nn.Tanh(),
         )
 
         # Separate Policy Network

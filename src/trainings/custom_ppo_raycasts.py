@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-PPO Training Script for Warehouse Stage1 Complex Pos Neg 3 Environment
+PPO Training Script for Warehouse Stage1 Environments
 
 This script trains a PPO agent on the custom warehouse environment using raycast observations.
 Based on the ppo_raw.ipynb notebook structure.
