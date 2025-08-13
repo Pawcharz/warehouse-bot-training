@@ -6,6 +6,7 @@ import random
 from torch.utils.tensorboard import SummaryWriter
 import os
 import sys
+from collections import defaultdict
 
 # Add root directory to path to find config module
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -84,7 +85,31 @@ class PPOAgent:
         self.settings = settings
         self.device = settings['device']
         self.model = model_net.to(self.device)
-        self.optimizer = optim.Adam(self.model.parameters(), lr=settings['lr'])
+        self.weight_decay = settings.get('weight_decay', 1e-5)
+        
+        # Create parameter groups with different learning rates
+        general_lr = settings['lr']
+        visual_lr = settings.get('visual_lr', general_lr)
+        vector_lr = settings.get('vector_lr', general_lr)
+        
+        # Group parameters by component
+        visual_params = list(self.model.visual_encoder_cnn.parameters()) + list(self.model.visual_encoder_mlp.parameters())
+        vector_params = list(self.model.vector_encoder.parameters())
+        general_params = list(self.model.policy_net.parameters()) + list(self.model.value_net.parameters())
+        
+        # Create optimizer with parameter groups
+        param_groups = [
+            {'params': visual_params, 'lr': visual_lr, 'name': 'visual_encoder'},
+            {'params': vector_params, 'lr': vector_lr, 'name': 'vector_encoder'},
+            {'params': general_params, 'lr': general_lr, 'name': 'policy_value'}
+        ]
+        
+        self.optimizer = optim.Adam(param_groups, weight_decay=self.weight_decay)
+        
+        # Add learning rate scheduler for gradual decay
+        scheduler_step_size = settings.get('scheduler_step_size', 100)
+        scheduler_gamma = settings.get('scheduler_gamma', 0.95)
+        self.scheduler = optim.lr_scheduler.StepLR(self.optimizer, step_size=scheduler_step_size, gamma=scheduler_gamma)
 
         # Set seeds for reproducibility
         self.set_seed(seed)
@@ -103,7 +128,7 @@ class PPOAgent:
 
         # PPO specific settings
         self.clip_eps = settings.get('clip_eps', 0.2)
-        self.max_grad_norm = settings.get('max_grad_norm', 0.5)
+        self.max_grad_norm = settings.get('max_grad_norm', 5.0)  # Updated default to match new clipping
         
         # Store other settings as instance variables for logging
         self.learning_rate = settings.get('lr', 3e-4)
@@ -114,6 +139,7 @@ class PPOAgent:
         self.update_timesteps = settings.get('update_timesteps', 1024)
         self.val_loss_coef = settings.get('val_loss_coef', 0.5)
         self.ent_loss_coef = settings.get('ent_loss_coef', 0.01)
+        self.gate_loss_coef = settings.get('gate_loss_coef', 0.0)
         
         # Store the seed for later use
         self.seed = seed
@@ -152,6 +178,145 @@ class PPOAgent:
         # Log hyperparameters
         self.logger.add_hparams(hparams, {})
 
+    def _log_weight_distributions(self, iteration):
+        """Log weight distributions for different parts of the model"""
+            
+        # Define model parts to log
+        model_parts = {
+            'visual_encoder_cnn': self.model.visual_encoder_cnn,
+            'visual_encoder_mlp': self.model.visual_encoder_mlp,
+            'vector_encoder': self.model.vector_encoder,
+            'policy_net': self.model.policy_net,
+            'value_net': self.model.value_net
+        }
+        
+        print(f"  Weight distributions:")
+        for part_name, part_module in model_parts.items():
+            weights = []
+            for param in part_module.parameters():
+                if param.requires_grad:
+                    weights.extend(param.data.cpu().numpy().flatten())
+            
+            if weights:
+                weights = np.array(weights)
+                if self.logger is not None:
+                    self.logger.add_histogram(f'Weights/{part_name}', weights, iteration)
+                    self.logger.add_scalar(f'Weights/{part_name}_norm', np.linalg.norm(weights), iteration)
+                    self.logger.add_scalar(f'Weights/{part_name}_min', np.min(weights), iteration)
+                    self.logger.add_scalar(f'Weights/{part_name}_max', np.max(weights), iteration)
+                
+                # Print weight summary
+                print(f"    {part_name}: norm={np.linalg.norm(weights):.6f}, range=[{np.min(weights):.4f}, {np.max(weights):.4f}]")
+
+    def _log_gradient_distributions(self, iteration):
+        """Log gradient distributions for different parts of the model"""
+        
+        # Define model parts to log
+        model_parts = {
+            'visual_encoder_cnn': self.model.visual_encoder_cnn,
+            'visual_encoder_mlp': self.model.visual_encoder_mlp,
+            'vector_encoder': self.model.vector_encoder,
+            'policy_net': self.model.policy_net,
+            'value_net': self.model.value_net
+        }
+        
+        print(f"  Gradient distributions:")
+        for part_name, part_module in model_parts.items():
+            gradients = []
+            for param in part_module.parameters():
+                if param.requires_grad and param.grad is not None:
+                    gradients.extend(param.grad.data.cpu().numpy().flatten())
+            
+            if gradients:
+                gradients = np.array(gradients)
+                if self.logger is not None:
+                    self.logger.add_histogram(f'Gradients/{part_name}', gradients, iteration)
+                    self.logger.add_scalar(f'Gradients/{part_name}_norm', np.linalg.norm(gradients), iteration)
+                    self.logger.add_scalar(f'Gradients/{part_name}_min', np.min(gradients), iteration)
+                    self.logger.add_scalar(f'Gradients/{part_name}_max', np.max(gradients), iteration)
+                
+                # Print gradient summary
+                print(f"    {part_name}: norm={np.linalg.norm(gradients):.6f}, range=[{np.min(gradients):.6f}, {np.max(gradients):.6f}]")
+            else:
+                print(f"    {part_name}: NO GRADIENTS (not being updated!)")
+
+    def _log_parameter_changes(self, iteration, old_params):
+        """Log parameter changes after optimization step"""
+        
+        # Define model parts to log
+        model_parts = {
+            'visual_encoder_cnn': self.model.visual_encoder_cnn,
+            'visual_encoder_mlp': self.model.visual_encoder_mlp,
+            'vector_encoder': self.model.vector_encoder,
+            'policy_net': self.model.policy_net,
+            'value_net': self.model.value_net
+        }
+        
+        print(f"  Parameter changes:")
+        for part_name, part_module in model_parts.items():
+            changes = []
+            param_idx = 0
+            for param in part_module.parameters():
+                if param.requires_grad:
+                    old_param = old_params[part_name][param_idx]
+                    change = (param.data.cpu().numpy() - old_param).flatten()
+                    changes.extend(change)
+                    param_idx += 1
+            
+            if changes:
+                changes = np.array(changes)
+                if self.logger is not None:
+                    self.logger.add_histogram(f'ParameterChanges/{part_name}', changes, iteration)
+                    self.logger.add_scalar(f'ParameterChanges/{part_name}_avg', np.mean(np.abs(changes)), iteration)
+                    self.logger.add_scalar(f'ParameterChanges/{part_name}_min', np.min(changes), iteration)
+                    self.logger.add_scalar(f'ParameterChanges/{part_name}_max', np.max(changes), iteration)
+                
+                # Print parameter change summary
+                print(f"    {part_name}: avg={np.mean(np.abs(changes)):.6f}, range=[{np.min(changes):.6f}, {np.max(changes):.6f}]")
+            else:
+                print(f"    {part_name}: NO CHANGES (not being updated!)")
+
+    def _capture_parameters(self):
+        """Capture current parameter values for change tracking"""
+        model_parts = {
+            'visual_encoder_cnn': self.model.visual_encoder_cnn,
+            'visual_encoder_mlp': self.model.visual_encoder_mlp,
+            'vector_encoder': self.model.vector_encoder,
+            'policy_net': self.model.policy_net,
+            'value_net': self.model.value_net
+        }
+        
+        old_params = {}
+        for part_name, part_module in model_parts.items():
+            old_params[part_name] = []
+            for param in part_module.parameters():
+                if param.requires_grad:
+                    old_params[part_name].append(param.data.cpu().numpy().copy())
+        
+        return old_params
+
+    def _log_action_distribution_buffer(self, actions, iteration):
+        """Log action distribution statistics for the whole buffer"""
+        
+        # Count action frequencies
+        action_counts = defaultdict(int)
+        for action in actions:
+            action_counts[action] += 1
+            
+        if self.logger is not None:
+            # Log action distribution as histogram
+            action_array = np.array(actions)
+            self.logger.add_histogram(f'Actions/Buffer_Distribution', action_array, iteration)
+            
+            # Log action frequencies
+            for action, count in action_counts.items():
+                self.logger.add_scalar(f'Actions/Buffer_Action_{action}_Count', count, iteration)
+                self.logger.add_scalar(f'Actions/Buffer_Action_{action}_Frequency', count/len(actions), iteration)
+        
+        # Print action distribution summary
+        action_summary = ", ".join([f"{count/len(actions)*100:.1f}%" for action, count in sorted(action_counts.items())])
+        print(f"  Actions distribution: {action_summary}")
+
     def set_seed(self, seed):
         """Set seeds for all random components to ensure reproducibility"""
         random.seed(seed)
@@ -161,9 +326,6 @@ class PPOAgent:
         th.cuda.manual_seed_all(seed)
         th.backends.cudnn.deterministic = True
         th.backends.cudnn.benchmark = False
-        
-        # Ensure deterministic model initialization
-        th.nn.init.seed = seed
 
     def reset_seed_for_iteration(self, iteration):
         """Reset seed for each training iteration to ensure reproducibility"""
@@ -191,17 +353,29 @@ class PPOAgent:
         # Entropy loss
         entropy_bonus = entropy.mean()
 
+        gate_loss = th.tensor(0.0, device=self.device, requires_grad=True)
+        # Gate loss: penalize gate values too close to 0 or 1 (encourage values near 0.5)
+        if self.gate_loss_coef > 0.0:
+            gate = self.model.get_current_gate()
+            if gate is not None:
+                # gate should be in [0, 1], penalize if too close to 0 or 1
+                # Use (gate - 0.5)^2, mean over batch
+                gate_loss = self.gate_loss_coef * ((gate - 0.5) ** 2).mean()
+
         # Apply coefficients
         value_loss *= self.settings['val_loss_coef']
         entropy_bonus *= self.settings['ent_loss_coef']
 
         # Return combined loss for single optimizer
-        total_loss = policy_loss + value_loss - entropy_bonus
-        return total_loss, policy_loss, value_loss, entropy_bonus
+        total_loss = policy_loss + value_loss - entropy_bonus + gate_loss
+        return total_loss, policy_loss, value_loss, entropy_bonus, gate_loss
     
     # Returns average loss of the batch
-    def update(self, obs, acts, old_logps, returns, advantages):
-        losses = {"total_loss": [], "policy_loss": [], "value_loss": [], "entropy_loss": []}
+    def update(self, obs, acts, old_logps, returns, advantages, iteration=None):
+        losses = {"total_loss": [], "policy_loss": [], "value_loss": [], "entropy_loss": [], "gate_loss": []}
+        
+        # Capture parameters before optimization for change tracking
+        old_params = self._capture_parameters()
       
         for epoch in range(self.settings['ppo_epochs']):
             # Get batch size based on observation type
@@ -211,7 +385,7 @@ class PPOAgent:
             rng = np.random.RandomState(self.seed + epoch)
             idxs = rng.permutation(batch_len)
             
-            epoch_losses = {"total_loss": [], "policy_loss": [], "value_loss": [], "entropy_loss": []}
+            epoch_losses = {"total_loss": [], "policy_loss": [], "value_loss": [], "entropy_loss": [], "gate_loss": []}
             
             for start in range(0, batch_len, self.settings['batch_size']):
                 end = start + self.settings['batch_size']
@@ -229,7 +403,7 @@ class PPOAgent:
                 mb_advantages = advantages[mb_idx]
 
                 # Calculate combined loss for both networks
-                total_loss, policy_loss, value_loss, entropy_bonus = self.calculate_loss(
+                total_loss, policy_loss, value_loss, entropy_bonus, gate_loss = self.calculate_loss(
                     mb_obs, mb_acts, mb_old_logps, mb_returns, mb_advantages
                 )
                 
@@ -237,8 +411,12 @@ class PPOAgent:
                 self.optimizer.zero_grad()
                 total_loss.backward()
                 
+                # Log gradients before clipping (only on first epoch and first batch for efficiency)
+                if epoch == 0 and start == 0 and iteration is not None:
+                    self._log_gradient_distributions(iteration)
+                
                 # Add gradient clipping
-                th.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=0.5)
+                th.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=self.max_grad_norm)
                 
                 self.optimizer.step()
                 
@@ -246,10 +424,15 @@ class PPOAgent:
                 epoch_losses["policy_loss"].append(policy_loss.item())
                 epoch_losses["value_loss"].append(value_loss.item())
                 epoch_losses["entropy_loss"].append(entropy_bonus.item())
+                epoch_losses["gate_loss"].append(gate_loss.item())
                 
             # Accumulate losses
             for key in losses.keys():
                 losses[key].extend(epoch_losses[key])
+        
+        # Log parameter changes after optimization (only if iteration is provided)
+        if iteration is not None:
+            self._log_parameter_changes(iteration, old_params)
 
         return losses
     
@@ -264,8 +447,7 @@ class PPOAgent:
             obs, _ = env.reset(seed=self.settings.get('seed', 0) + iteration)
             buffer = RolloutBuffer(self.device)
 
-            # Reset reward normalizer for new iteration
-            self.reward_normalizer.reset()
+            # Don't reset reward normalizer - let it maintain running statistics
             ep_return = 0
             ep_returns = []
             ep_steps = []
@@ -345,7 +527,8 @@ class PPOAgent:
                 buffer_data['acts'], 
                 buffer_data['logps'], 
                 returns, 
-                advantages
+                advantages,
+                iteration=iteration
             )
             
             # Clear buffer for next iteration
@@ -365,6 +548,21 @@ class PPOAgent:
             time_end = time.time()
             time_taken = time_end - time_start
 
+            # Log weight distributions
+            self._log_weight_distributions(iteration)
+            
+            # Log action distribution for the whole buffer
+            all_actions = buffer_data['acts'].cpu().numpy()
+            self._log_action_distribution_buffer(all_actions, iteration)
+            
+            # Print logging summary
+            if self.logger is not None:
+                print(f"  Logged action distribution for buffer ({len(all_actions)} actions)")
+                print(f"  Logged gradients and parameter changes for all model parts")
+
+            # Get gate coefficient for logging
+            gate_coeff = self.model.get_latest_gate_coeff() if self.gate_loss_coef > 0.0 else None
+            
             # Log metrics to TensorBoard
             if self.logger is not None:
                 self.logger.add_scalar('Training/Mean_Return', mean_return, iteration)
@@ -374,16 +572,29 @@ class PPOAgent:
                 self.logger.add_scalar('Training/Time_Taken', time_taken, iteration)
                 self.logger.add_scalar('Training/Episodes', len(ep_returns), iteration)
                 
+                # Log gate coefficient if available
+                if gate_coeff is not None:
+                    self.logger.add_scalar('Model/Gate_Coefficient', gate_coeff, iteration)
+                
                 # Log losses
                 self.logger.add_scalar('Losses/Total_Loss', mean_losses['total_loss'], iteration)
                 self.logger.add_scalar('Losses/Policy_Loss', mean_losses['policy_loss'], iteration)
                 self.logger.add_scalar('Losses/Value_Loss', mean_losses['value_loss'], iteration)
                 self.logger.add_scalar('Losses/Entropy_Loss', mean_losses['entropy_loss'], iteration)
+                self.logger.add_scalar('Losses/Gate_Loss', mean_losses['gate_loss'], iteration)
 
+            # Log current learning rates
+            current_lrs = [group['lr'] for group in self.optimizer.param_groups]
+            lr_info = f"LRs: visual={current_lrs[0]:.2e}, vector={current_lrs[1]:.2e}, general={current_lrs[2]:.2e}"
+            
+            gate_info = f" | Gate Coeff: {gate_coeff:.4f}" if gate_coeff is not None else ""
             print(f"Iteration {iteration} completed. Episodes: {len(ep_returns)} | Time taken: {time_taken:.2f}s | "
                   f"Mean Return: {mean_return:.4f} | Std Return: {std_return:.4f} | "
-                  f"Mean steps: {mean_steps:.4f} | Std steps: {std_steps:.4f} | "
-                  f"Mean losses: total: {mean_losses['total_loss']:.6f}, policy: {mean_losses['policy_loss']:.6f}, value: {mean_losses['value_loss']:.6f}, entropy: {mean_losses['entropy_loss']:.6f}")
+                  f"Mean steps: {mean_steps:.4f} | Std steps: {std_steps:.4f}{gate_info} | "
+                  f"Mean losses: total: {mean_losses['total_loss']:.6f}, policy: {mean_losses['policy_loss']:.6f}, value: {mean_losses['value_loss']:.6f}, entropy: {mean_losses['entropy_loss']:.6f}, gate: {mean_losses['gate_loss']:.6f} | {lr_info}")
+            
+            # Step the learning rate scheduler
+            self.scheduler.step()
         
         # Close TensorBoard logger
         if self.logger is not None:

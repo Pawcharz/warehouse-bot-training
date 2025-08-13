@@ -103,7 +103,7 @@ class PPOAgent:
         # PPO specific settings
         self.clip_eps = settings.get('clip_eps', 0.2)
         self.value_clip_eps = settings.get('value_clip_eps', 0.2)  # Separate clipping for value function
-        self.max_grad_norm = settings.get('max_grad_norm', 0.5)
+        self.max_grad_norm = settings.get('max_grad_norm', 5.0)  # Updated default
         
         # Store the seed for later use
         self.seed = seed
@@ -209,7 +209,7 @@ class PPOAgent:
                 total_loss.backward()
                 
                 # Add gradient clipping
-                th.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=0.5)
+                th.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=self.max_grad_norm)
                 
                 self.optimizer.step()
                 

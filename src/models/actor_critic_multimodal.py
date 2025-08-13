@@ -11,74 +11,119 @@ class ActorCriticMultimodal(nn.Module):
         self.device = device
 
         bands = visual_obs_size[0]
-        # Shapes of image and vector inputs: [<batch size>, <bands, height, width>], [<batch size>, <length>]
+        
+        # Embedding sizes for each modality
+        visual_embedding_size = 64
+        vector_embedding_size = 64
+        
+        # Calculate repeated vector size to match visual embedding dimension
+        repeat_factor = visual_embedding_size // vector_obs_size
+        actual_repeated_vector_size = repeat_factor * vector_obs_size
+        
+        self.repeat_factor = repeat_factor
+        self.vector_net_input_size = actual_repeated_vector_size
 
-        visual_out_size = 32
-        vector_out_size = 2
-
-        # Visual Encoder (shared between policy and value)
+        # Visual encoder: CNN for feature extraction
         self.visual_encoder_cnn = nn.Sequential(
-            nn.Conv2d(bands, 6, kernel_size=5, stride=1, padding=0),
-            nn.Tanh(),
-            nn.AvgPool2d(kernel_size=2, stride=2),
-            nn.Conv2d(6, 16, kernel_size=5, stride=1, padding=0),
-            nn.Tanh(),
-            nn.AvgPool2d(kernel_size=2, stride=2),
-            nn.Conv2d(16, 32, kernel_size=3, stride=2, padding=1),
-            nn.Tanh(),
-            nn.AvgPool2d(kernel_size=2, stride=2),
+            nn.Conv2d(bands, 16, kernel_size=5, stride=1, padding=2),
+            nn.BatchNorm2d(16),
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size=2, stride=2),
+            
+            nn.Conv2d(16, 32, kernel_size=5, stride=1, padding=2),
+            nn.BatchNorm2d(32),
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size=2, stride=2),
+            
+            nn.Dropout2d(0.1),
+            nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(64),
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size=2, stride=2),
+            
+            nn.Dropout2d(0.1),
+            nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(128),
+            nn.ReLU(),
+            nn.AdaptiveAvgPool2d((2, 2)),
             nn.Flatten(),
         )
 
-        # Compute flattened visual output size from dummy input
+        # Compute CNN output size
         dummy_input = th.zeros(1, bands, visual_obs_size[1], visual_obs_size[2])
         with th.no_grad():
             visual_encoder_cnn_out_size = self.visual_encoder_cnn(dummy_input).shape[1]
 
+        # Visual encoder: MLP for embedding
         self.visual_encoder_mlp = nn.Sequential(
-            nn.Linear(visual_encoder_cnn_out_size, 64),
-            nn.Tanh(),
-            nn.Linear(64, 32),
-            nn.Tanh(),
-            nn.Linear(32, visual_out_size),
-            nn.Tanh()
+            nn.Linear(visual_encoder_cnn_out_size, 256),
+            nn.ReLU(),
+            nn.Dropout(0.1),
+            nn.Linear(256, 128),
+            nn.ReLU(),
+            nn.Dropout(0.1),
+            nn.Linear(128, visual_embedding_size),
+            nn.LayerNorm(visual_embedding_size)
         )
         
-        # Vector Encoder (shared between policy and value)
+        # Vector encoder
         self.vector_encoder = nn.Sequential(
-            nn.Linear(vector_obs_size, vector_out_size),
-            nn.Tanh(),
+            nn.Linear(self.vector_net_input_size, 128),
+            nn.ReLU(),
+            nn.Linear(128, vector_embedding_size),
+            nn.LayerNorm(vector_embedding_size)
         )
+        
+        # Fusion layer input size
+        fusion_size = visual_embedding_size + vector_embedding_size
 
-        # Separate Policy Network
+        # Policy network
         self.policy_net = nn.Sequential(
-            nn.Linear(visual_out_size + vector_out_size, 64),
-            nn.Tanh(),
-            nn.Linear(64, 32),
-            nn.Tanh(),
-            nn.Linear(32, act_dim)
+            nn.Linear(fusion_size, 128),
+            nn.ReLU(),
+            nn.Linear(128, 64),
+            nn.ReLU(),
+            nn.Linear(64, act_dim)
         )
         
-        # Separate Value Network
+        # Value network
         self.value_net = nn.Sequential(
-            nn.Linear(visual_out_size + vector_out_size, 64),
-            nn.Tanh(),
-            nn.Linear(64, 32),
-            nn.Tanh(),
-            nn.Linear(32, 1)
+            nn.Linear(fusion_size, 128),
+            nn.ReLU(),
+            nn.Linear(128, 64),
+            nn.ReLU(),
+            nn.Linear(64, 1)
         )
         
-        # Move model to device if specified
         if device is not None:
             self.to(self.device)
+            
+        self._init_weights()
+
+    def _init_weights(self):
+        """Initialize network weights for stable training"""
+        for module in self.modules():
+            if isinstance(module, nn.Conv2d):
+                nn.init.kaiming_normal_(module.weight, mode='fan_out', nonlinearity='relu')
+                if module.bias is not None:
+                    nn.init.constant_(module.bias, 0)
+            elif isinstance(module, nn.Linear):
+                nn.init.orthogonal_(module.weight, gain=np.sqrt(2))
+                nn.init.constant_(module.bias, 0)
+            elif isinstance(module, (nn.BatchNorm2d, nn.LayerNorm)):
+                nn.init.constant_(module.weight, 1)
+                nn.init.constant_(module.bias, 0)
 
     def _encode_observations(self, observations):
         """Shared encoding for both policy and value networks"""
-
         image = observations["visual"]
         vector = observations["vector"]
+
+        # Normalize inputs
+        vector = (vector - 0.5) * 2.0  # Vector to [-1, 1]
+        image = image / 255            # Image to [0, 1]
         
-        # Convert to tensors and move to model device
+        # Convert to tensors and move to device
         if not isinstance(image, th.Tensor):
             image = th.tensor(image, device=self.device)
         else:
@@ -92,13 +137,18 @@ class ActorCriticMultimodal(nn.Module):
         image = image.float()
         vector = vector.float()
 
-        # Encode features
+        # Repeat vector to match embedding dimension
+        repeated_vector = vector.repeat(1, self.repeat_factor)
+
+        # Extract features from both modalities
         image_features = self.visual_encoder_cnn(image)
         image_features = self.visual_encoder_mlp(image_features)
-        vector_features = self.vector_encoder(vector)
+        vector_features = self.vector_encoder(repeated_vector)
 
-        combined = th.cat([image_features, vector_features], dim=1)
-        return combined
+        # Fuse modalities by concatenation
+        fused = th.cat([image_features, vector_features], dim=1)
+        
+        return fused
     
     def forward(self, observations):
         combined = self._encode_observations(observations)

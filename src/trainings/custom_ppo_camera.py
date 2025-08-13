@@ -77,7 +77,8 @@ def main():
     # Create environment
     print("\nCreating environment...")
     env = make_env(time_scale=1, no_graphics=False, verbose=True, env_type="multimodal", env_path='environment_builds/stage2/S2_Find_Items_64x36camera120deg_rew0_100/Warehouse_Bot.exe')
-    
+    # env = make_env(time_scale=2, no_graphics=True, verbose=True, env_type="multimodal", env_path='environment_builds/stage2/S2_Find_Items_64x36camera120deg_rew0_20_100/Warehouse_Bot.exe')
+
     try:
         print(env.observation_space)
         # Get environment dimensions
@@ -108,11 +109,18 @@ def main():
             'lambda': 0.95,
             'clip_eps': 0.2,
             'ppo_epochs': 4,
-            'batch_size': 128,
-            'update_timesteps': 2048,
-            'lr': 3e-4,
+            'batch_size': 64,
+            'update_timesteps': 1024,
+            'lr': 3e-4, 
+            'visual_lr': 1e-4,
+            'vector_lr': 1e-4,
+            'max_grad_norm': 1.0,
             'val_loss_coef': 0.5,
             'ent_loss_coef': 0.01,
+            'scheduler_step_size': 15,   # Decay LR every 15 iterations
+            'scheduler_gamma': 0.95,     # Multiply LR by 0.95 each step
+            # 'gate_loss_coef': 0.01,
+            'weight_decay': 1e-5,
             'device': device,
             'seed': seed,
             # 'use_tensorboard': True,
