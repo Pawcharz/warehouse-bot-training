@@ -31,36 +31,7 @@ from src.algorithms.PPO_algorithm import PPOAgent
 # from src.algorithms.PPO_algorithm_returns_clipping import PPOAgent
 from src.models.actor_critic_multimodal import ActorCriticMultimodal
 from src.models.model_utils import count_parameters, save_model_checkpoint, create_model_filename, get_default_save_dir
-
-def evaluate_policy(agent, env, num_episodes=10, seed=0):
-    """Evaluate the trained policy"""
-    returns = []
-    steps = []
-    
-    for episode in range(num_episodes):
-        obs, _ = env.reset(seed=seed + episode)
-        episode_return = 0
-        episode_steps = 0
-        done = False
-        truncated = False
-        
-        while not (done or truncated):
-            # Convert observation to tensor
-            obs_tensor = th.tensor(obs, dtype=th.float32, device=agent.device).unsqueeze(0)
-            
-            # Get action from policy
-            with th.no_grad():
-                action, _, _, _ = agent.model.get_action(obs_tensor)
-            
-            # Take action in environment
-            obs, reward, done, truncated, _ = env.step(action.item())
-            episode_return += reward
-            episode_steps += 1
-        
-        returns.append(episode_return)
-        steps.append(episode_steps)
-    
-    return np.mean(returns), np.std(returns), np.mean(steps), np.std(steps)
+from src.utils.evaluation import evaluate_policy
 
 def main():
     print("Starting PPO Training for Warehouse Stage2...")
@@ -76,8 +47,8 @@ def main():
     
     # Create environment
     print("\nCreating environment...")
-    env = make_env(time_scale=1, no_graphics=False, verbose=True, env_type="multimodal", env_path='environment_builds/stage2/S2_Find_Items_64x36camera120deg_rew0_100/Warehouse_Bot.exe')
-    # env = make_env(time_scale=2, no_graphics=True, verbose=True, env_type="multimodal", env_path='environment_builds/stage2/S2_Find_Items_64x36camera120deg_rew0_20_100/Warehouse_Bot.exe')
+    # env = make_env(time_scale=1, no_graphics=False, verbose=True, env_type="multimodal", env_path='environment_builds/stage2/S2_Find_Items_64x36camera120deg_rew0_100/Warehouse_Bot.exe')
+    env = make_env(time_scale=2, no_graphics=True, verbose=True, env_type="multimodal", env_path='environment_builds/stage2/S2_Find_Items_64x36camera120deg_rew0_20_100/Warehouse_Bot.exe')
 
     try:
         print(env.observation_space)
@@ -114,20 +85,22 @@ def main():
             'lr': 3e-4, 
             'visual_lr': 1e-4,
             'vector_lr': 1e-4,
-            'max_grad_norm': 1.0,
+            'max_grad_norm': 0.5,
             'val_loss_coef': 0.5,
-            'ent_loss_coef': 0.01,
-            'scheduler_step_size': 15,   # Decay LR every 15 iterations
-            'scheduler_gamma': 0.95,     # Multiply LR by 0.95 each step
-            # 'gate_loss_coef': 0.01,
+            'ent_loss_coef': 0.015,
+            # Remove aggressive scheduler temporarily
+            # 'scheduler_step_size': 50,
+            # 'scheduler_gamma': 0.90,
             'weight_decay': 1e-5,
             'device': device,
             'seed': seed,
-            # 'use_tensorboard': True,
-            # 'tensorboard_log_dir': 'logs/stage2/S2_Find_Items_64x36camera120deg_rew0_100_1',
+            'value_clip_eps': 0.2,
+            'use_tensorboard': True,
+            'tensorboard_log_dir': 'logs/test/tensorboard_test_2',
+            'histogram_logging_interval': 5,
             # 'experiment_name': f'ppo_seed_{seed}'
         }
-        training_iterations = 800
+        training_iterations = 12
 
         # Create model
         model_net = ActorCriticMultimodal(act_dim, visual_obs_size=obs_dim_visual, vector_obs_size=obs_dim_vector, device=device)
@@ -158,7 +131,7 @@ def main():
         # Evaluation
         print("\nEvaluating trained policy...")
         mean_return, std_return, mean_steps, std_steps = evaluate_policy(
-            agent, env, num_episodes=10, seed=seed
+            agent, env, num_episodes=5, seed=seed, obs_type="multimodal"
         )
         
         print(f"\n=== TRAINING RESULTS ===")
@@ -169,8 +142,8 @@ def main():
         
         # Save model (optional)
         try:
-            save_dir = get_default_save_dir("custom", "stage2")
-            filename = create_model_filename("S2_Find_Items_64x36camera120deg_rew0_100", seed)
+            save_dir = get_default_save_dir("custom", "test")
+            filename = create_model_filename("tensorboard_test", seed)
             
             model_path = save_model_checkpoint(
                 model=agent.model,
