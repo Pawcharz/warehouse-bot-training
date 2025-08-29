@@ -13,7 +13,7 @@ if root_dir not in sys.path:
     sys.path.insert(0, root_dir)
 
 from src.algorithms.RewardsNormalizer import RewardNormalizer
-from src.utils.logger import PPOLogger
+from src.utils.wandb_logger import WandBLogger
 
 class GAE:
     def __init__(self, gamma: float, lam: float):
@@ -80,12 +80,16 @@ class RolloutBuffer:
 
 # PPO Agent - FIX hyperparameters logging
 class PPOAgent:
-    def __init__(self, model_net, settings, seed=0):
+    def __init__(self, model_net, settings):
         self.settings = settings
+        self.seed = settings.get('seed', 0)
+        # Set seeds for reproducibility
+        self.apply_seed(self.seed)
+
+        # Initialize model and device
         self.device = settings['device']
         self.model = model_net.to(self.device)
         self.weight_decay = settings.get('weight_decay', 1e-5)
-
         self.histogram_logging_interval = settings.get('histogram_logging_interval', 10)
         
         # Create parameter groups with different learning rates
@@ -111,9 +115,6 @@ class PPOAgent:
         scheduler_step_size = settings.get('scheduler_step_size', 100)
         scheduler_gamma = settings.get('scheduler_gamma', 0.95)
         self.scheduler = optim.lr_scheduler.StepLR(self.optimizer, step_size=scheduler_step_size, gamma=scheduler_gamma)
-
-        # Set seeds for reproducibility
-        self.set_seed(seed)
 
         # Initialize GAE
         self.gae = GAE(
@@ -143,20 +144,21 @@ class PPOAgent:
         self.ent_loss_coef = settings.get('ent_loss_coef', 0.01)
         self.gate_loss_coef = settings.get('gate_loss_coef', 0.0)
         
-        # Store the seed for later use
-        self.seed = seed
-        
-        # Initialize PPO Logger
-        self.ppo_logger = PPOLogger(settings, seed)
-        
+        # Initialize WandB Logger
+
+        self.ppo_logger = None
+        if settings.get('use_wandb'):
+          try:
+              self.ppo_logger = WandBLogger(settings, self.seed)
+          except Exception as e:
+            print(f"Failed to initialize WandB Logger: {e}")
+            self.ppo_logger = None
+          
         # Log hyperparameters (combine settings with seed)
         hyperparams = settings.copy()
-        hyperparams['seed'] = seed
         self.ppo_logger.log_hyperparameters(hyperparams)
 
-
-
-    def set_seed(self, seed):
+    def apply_seed(self, seed):
         """Set seeds for all random components to ensure reproducibility"""
         random.seed(seed)
         np.random.seed(seed)
@@ -166,9 +168,9 @@ class PPOAgent:
         th.backends.cudnn.deterministic = True
         th.backends.cudnn.benchmark = False
 
-    def reset_seed_for_iteration(self, iteration):
+    def apply_seed_iteration(self, iteration):
         """Reset seed for each training iteration to ensure reproducibility"""
-        seed = self.settings.get('seed', 0) + iteration
+        seed = self.seed + iteration
         random.seed(seed)
         np.random.seed(seed)
         th.manual_seed(seed)
@@ -199,7 +201,6 @@ class PPOAgent:
         else:
             # Standard MSE value loss
             value_loss = ((values - mb_returns)**2).mean()
-        # print("value loss mean: ", value_loss.mean())
 
         # Entropy loss
         entropy_bonus = entropy.mean()
@@ -222,7 +223,7 @@ class PPOAgent:
         return total_loss, policy_loss, value_loss, entropy_bonus, gate_loss
     
     # Returns average loss of the batch
-    def update(self, obs, acts, old_logps, returns, advantages, old_values=None, iteration=None):
+    def update(self, obs, acts, old_logps, returns, advantages, old_values=None, iteration=None, log_histograms=False):
         losses = {"total_loss": [], "policy_loss": [], "value_loss": [], "entropy_loss": [], "gate_loss": []}
         
         # Capture parameters before optimization for change tracking
@@ -264,8 +265,7 @@ class PPOAgent:
                 total_loss.backward()
                 
                 # Log gradients before clipping (only on first epoch and first batch for interpretability)
-                if iteration is not None and iteration % self.histogram_logging_interval == 0 and epoch == 0 and start == 0:
-                    self.ppo_logger.log_gradient_distributions(self.model, iteration, log_histograms=True)
+                self.ppo_logger.log_gradients(self.model, iteration, log_histograms=log_histograms)
                 
                 # Add gradient clipping
                 th.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=self.max_grad_norm)
@@ -293,10 +293,10 @@ class PPOAgent:
             time_start = time.time()
           
             # Reset seeds for this iteration to ensure reproducibility
-            self.reset_seed_for_iteration(iteration)
+            self.apply_seed_iteration(iteration)
             
             # Seed the environment for reproducibility
-            obs, _ = env.reset(seed=self.settings.get('seed', 0) + iteration)
+            obs, _ = env.reset(seed=self.seed + iteration)
             buffer = RolloutBuffer(self.device)
 
             # Don't reset reward normalizer - let it maintain running statistics
@@ -337,7 +337,7 @@ class PPOAgent:
                     ep_steps.append(ep_t)
                     ep_t = 0
                     
-                    obs, _ = env.reset(seed=self.settings.get('seed', 0) + iteration)
+                    obs, _ = env.reset(seed=self.seed + iteration)
                     if t >= self.settings['update_timesteps']:
                         break
                 t += 1
@@ -374,6 +374,9 @@ class PPOAgent:
             if self.settings.get('normalize_advantages', False):
                 advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
+            # Log histograms only on first iteration
+            log_histograms = (iteration == 0)
+
             # Training step
             losses = self.update(
                 buffer_data['obs'], 
@@ -382,7 +385,8 @@ class PPOAgent:
                 returns, 
                 advantages,
                 old_values=buffer_data['vals'],  # Pass old values for clipping
-                iteration=iteration
+                iteration=iteration,
+                log_histograms=log_histograms
             )
             
             # Clear buffer for next iteration
@@ -402,19 +406,18 @@ class PPOAgent:
             time_end = time.time()
             time_taken = time_end - time_start
 
-            log_histograms = (iteration % self.histogram_logging_interval == 0)
-
             # Log weight distributions
             self.ppo_logger.log_weight_distributions(self.model, iteration, log_histograms)
             
-            # Log action distribution for the whole buffer
-            all_actions = buffer_data['acts'].cpu().numpy()
-            self.ppo_logger.log_action_distribution(all_actions, iteration, log_histograms)
+            if log_histograms:
+                # Log action distribution for the whole buffer
+                all_actions = buffer_data['acts'].cpu().numpy()
+                self.ppo_logger.log_action_distributions(all_actions, iteration)
 
-            # Get gate coefficient for logging
+            # Get gate coefficient for logging (only if gate loss is used)
             gate_coeff = self.model.get_latest_gate_coeff() if self.gate_loss_coef > 0.0 else None
             
-            # Prepare metrics for TensorBoard logging
+            # Prepare metrics for logging
             training_metrics = {
                 'mean_return': mean_return,
                 'std_return': std_return,
@@ -425,19 +428,10 @@ class PPOAgent:
                 'gate_coeff': gate_coeff
             }
             
-            # Log metrics to TensorBoard
+            # Log metrics
             self.ppo_logger.log_training_metrics(iteration, training_metrics)
             self.ppo_logger.log_losses(iteration, mean_losses)
             self.ppo_logger.log_learning_rates(iteration, self.optimizer)
-            
-            # Log runtime hyperparameters (learning rates as they decay)
-            current_lrs = [group['lr'] for group in self.optimizer.param_groups]
-            self.ppo_logger.log_runtime_hyperparameters(
-                iteration,
-                learning_rate_visual=current_lrs[0] if len(current_lrs) > 0 else None,
-                learning_rate_vector=current_lrs[1] if len(current_lrs) > 1 else None,
-                learning_rate_policy_value=current_lrs[2] if len(current_lrs) > 2 else None
-            )
 
             # Log current learning rates for console output
             current_lrs = [group['lr'] for group in self.optimizer.param_groups]
@@ -451,5 +445,5 @@ class PPOAgent:
             # Step the learning rate scheduler
             self.scheduler.step()
         
-        # Close TensorBoard logger
+        # Close logger
         self.ppo_logger.close()

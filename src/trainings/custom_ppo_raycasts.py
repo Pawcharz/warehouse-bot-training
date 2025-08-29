@@ -111,9 +111,9 @@ def main():
         'ent_loss_coef': 0.01,
         'device': device,
         'seed': seed,
-        'use_tensorboard': True,
-        'tensorboard_log_dir': 'logs/stage1/S1_Find_Deliver_16rays_rew0_100_200_speed6x',
-        'experiment_name': f'ppo_seed_{seed}'
+        'use_wandb': True,
+        'experiment_name': f'ppo_seed_{seed}',
+        'experiment_notes': 'Stage1 Find Deliver with raycasts'
     }
     training_iterations = 800
 

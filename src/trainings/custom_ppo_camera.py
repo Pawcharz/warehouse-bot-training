@@ -88,17 +88,16 @@ def main():
             'max_grad_norm': 0.5,
             'val_loss_coef': 0.5,
             'ent_loss_coef': 0.015,
-            # Remove aggressive scheduler temporarily
             # 'scheduler_step_size': 50,
             # 'scheduler_gamma': 0.90,
             'weight_decay': 1e-5,
             'device': device,
             'seed': seed,
             'value_clip_eps': 0.2,
-            'use_tensorboard': True,
-            'tensorboard_log_dir': 'logs/test/tensorboard_test_2',
+            'use_wandb': True,  # Changed from use_tensorboard
+            'experiment_name': f'test_wandb_1',
+            'experiment_notes': 'test wandb logging',
             'histogram_logging_interval': 5,
-            # 'experiment_name': f'ppo_seed_{seed}'
         }
         training_iterations = 12
 
@@ -116,7 +115,7 @@ def main():
         
         # Create PPO agent
         print("\nCreating PPO agent...")
-        agent = PPOAgent(model_net, settings, seed=seed)
+        agent = PPOAgent(model_net, settings)
         
         # Training
         print("\nStarting training...")
