@@ -90,7 +90,6 @@ class PPOAgent:
         self.device = settings['device']
         self.model = model_net.to(self.device)
         self.weight_decay = settings.get('weight_decay', 1e-5)
-        self.histogram_logging_interval = settings.get('histogram_logging_interval', 10)
         
         # Create parameter groups with different learning rates
         general_lr = settings['lr']
@@ -145,14 +144,12 @@ class PPOAgent:
         self.gate_loss_coef = settings.get('gate_loss_coef', 0.0)
         
         # Initialize WandB Logger
-
         self.ppo_logger = None
-        if settings.get('use_wandb'):
-          try:
-              self.ppo_logger = WandBLogger(settings, self.seed)
-          except Exception as e:
+        try:
+            self.ppo_logger = WandBLogger(settings, self.seed)
+        except Exception as e:
             print(f"Failed to initialize WandB Logger: {e}")
-            self.ppo_logger = None
+            raise e
           
         # Log hyperparameters (combine settings with seed)
         hyperparams = settings.copy()
@@ -223,7 +220,7 @@ class PPOAgent:
         return total_loss, policy_loss, value_loss, entropy_bonus, gate_loss
     
     # Returns average loss of the batch
-    def update(self, obs, acts, old_logps, returns, advantages, old_values=None, iteration=None, log_histograms=False):
+    def update(self, obs, acts, old_logps, returns, advantages, old_values=None, iteration=None):
         losses = {"total_loss": [], "policy_loss": [], "value_loss": [], "entropy_loss": [], "gate_loss": []}
         
         # Capture parameters before optimization for change tracking
@@ -265,7 +262,7 @@ class PPOAgent:
                 total_loss.backward()
                 
                 # Log gradients before clipping (only on first epoch and first batch for interpretability)
-                self.ppo_logger.log_gradients(self.model, iteration, log_histograms=log_histograms)
+                self.ppo_logger.log_gradients(self.model, iteration)
                 
                 # Add gradient clipping
                 th.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=self.max_grad_norm)
@@ -374,9 +371,6 @@ class PPOAgent:
             if self.settings.get('normalize_advantages', False):
                 advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
-            # Log histograms only on first iteration
-            log_histograms = (iteration == 0)
-
             # Training step
             losses = self.update(
                 buffer_data['obs'], 
@@ -385,8 +379,7 @@ class PPOAgent:
                 returns, 
                 advantages,
                 old_values=buffer_data['vals'],  # Pass old values for clipping
-                iteration=iteration,
-                log_histograms=log_histograms
+                iteration=iteration
             )
             
             # Clear buffer for next iteration
@@ -407,12 +400,7 @@ class PPOAgent:
             time_taken = time_end - time_start
 
             # Log weight distributions
-            self.ppo_logger.log_weight_distributions(self.model, iteration, log_histograms)
-            
-            if log_histograms:
-                # Log action distribution for the whole buffer
-                all_actions = buffer_data['acts'].cpu().numpy()
-                self.ppo_logger.log_action_distributions(all_actions, iteration)
+            self.ppo_logger.log_weight_distributions(self.model, iteration)
 
             # Get gate coefficient for logging (only if gate loss is used)
             gate_coeff = self.model.get_latest_gate_coeff() if self.gate_loss_coef > 0.0 else None

@@ -94,12 +94,10 @@ def main():
             'device': device,
             'seed': seed,
             'value_clip_eps': 0.2,
-            'use_wandb': True,  # Changed from use_tensorboard
             'experiment_name': f'test_wandb_1',
             'experiment_notes': 'test wandb logging',
-            'histogram_logging_interval': 5,
         }
-        training_iterations = 12
+        training_iterations = 20
 
         # Create model
         model_net = ActorCriticMultimodal(act_dim, visual_obs_size=obs_dim_visual, vector_obs_size=obs_dim_vector, device=device)

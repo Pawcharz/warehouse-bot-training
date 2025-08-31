@@ -111,7 +111,6 @@ def main():
         'ent_loss_coef': 0.01,
         'device': device,
         'seed': seed,
-        'use_wandb': True,
         'experiment_name': f'ppo_seed_{seed}',
         'experiment_notes': 'Stage1 Find Deliver with raycasts'
     }

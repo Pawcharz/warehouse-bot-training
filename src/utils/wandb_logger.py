@@ -21,23 +21,22 @@ class WandBLogger:
         self.seed = seed
         self.wandb_run = None
         
-        # Initialize WandB if enabled
-        if settings.get('use_wandb', False):
-            api_key = settings.get('wandb_api_key', os.getenv('WANDB_API_KEY'))
-            if not api_key:
-                raise Exception("WANDB_API_KEY not found. Disabling WandB logging.")
-            
-            try:
-                self.wandb_run = wandb.init(
-                    project=settings.get('wandb_project', 'warehouse-bot-training'),
-                    name=settings.get('experiment_name', f'ppo_seed_{seed}'),
-                    entity=settings.get('wandb_entity', None),
-                    tags=[f"seed_{seed}", "ppo"],
-                    reinit=True
-                )
-                print(f"WandB initialized: {self.wandb_run.name}")
-            except Exception as e:
-                raise Exception(f"Failed to initialize WandB: {e}")
+        # Initialize WandB
+        api_key = settings.get('wandb_api_key', os.getenv('WANDB_API_KEY'))
+        if not api_key:
+            raise Exception("WANDB_API_KEY not found. Disabling WandB logging.")
+        
+        try:
+            self.wandb_run = wandb.init(
+                project=settings.get('wandb_project', 'warehouse-bot-training'),
+                name=settings.get('experiment_name', f'ppo_seed_{seed}'),
+                entity=settings.get('wandb_entity', None),
+                tags=[f"seed_{seed}", "ppo"],
+                reinit=True
+            )
+            print(f"WandB initialized: {self.wandb_run.name}")
+        except Exception as e:
+            raise Exception(f"Failed to initialize WandB: {e}")
     
     def log_hyperparameters(self, hyperparams):
         """Log initial hyperparameters once at start of training (static tabular data)."""
@@ -85,14 +84,13 @@ class WandBLogger:
         if log_dict:
             wandb.log(log_dict, step=iteration)
     
-    def log_gradients(self, model, iteration, log_histograms=False):
+    def log_gradients(self, model, iteration):
         """Log aggregated gradient statistics by component (time series plots)."""
         if self.wandb_run is None:
             return
         
         component_gradients_abs_mean = defaultdict(list)
         component_gradients_l2_norm = defaultdict(list)
-        histogram_data = {}
         
         # Collect gradient L2 norms for each component
         for name, param in model.named_parameters():
@@ -102,12 +100,6 @@ class WandBLogger:
                 grad_l2_norm = param.grad.flatten().norm().item()
                 component_gradients_abs_mean[component].append(grad_abs_mean)
                 component_gradients_l2_norm[component].append(grad_l2_norm)
-                
-                # Collect histogram data if requested
-                if log_histograms:
-                    if component not in histogram_data:
-                        histogram_data[component] = []
-                    histogram_data[component].extend(param.grad.detach().cpu().numpy().flatten())
         
         # Log aggregated component statistics  
         log_dict = {}
@@ -118,21 +110,15 @@ class WandBLogger:
             if gradients_l2_norm:
                 log_dict[f'gradients/l2_norm/{component}'] = np.mean(gradients_l2_norm)
         
-        # Add histograms if requested (less frequent to avoid clutter)
-        if log_histograms:
-            for component, data in histogram_data.items():
-                log_dict[f'gradients/hist/{component}'] = wandb.Histogram(np.array(data))
-        
         if log_dict:
             wandb.log(log_dict, step=iteration)
     
-    def log_weight_distributions(self, model, iteration, log_histograms=False):
+    def log_weight_distributions(self, model, iteration):
         """Log aggregated weight statistics by component (time series plots)."""
         if self.wandb_run is None:
             return
         
         component_weights_abs_mean = defaultdict(list)
-        histogram_data = {}
         
         # Collect weight L2 norms for each component
         for name, param in model.named_parameters():
@@ -140,12 +126,6 @@ class WandBLogger:
                 component = name.split('.')[0] if '.' in name else name
                 weight_abs_mean = param.data.flatten().abs().mean().item()
                 component_weights_abs_mean[component].append(weight_abs_mean)
-                
-                # Collect histogram data if requested
-                if log_histograms:
-                    if component not in histogram_data:
-                        histogram_data[component] = []
-                    histogram_data[component].extend(param.data.detach().cpu().numpy().flatten())
         
         # Log aggregated component statistics
         log_dict = {}
@@ -153,25 +133,8 @@ class WandBLogger:
             if weights_abs_mean:
                 log_dict[f'weights/abs_mean/{component}'] = np.mean(weights_abs_mean)
         
-        # Add histograms if requested (less frequent to avoid clutter)
-        if log_histograms:
-            for component, data in histogram_data.items():
-                log_dict[f'weights/hist/{component}'] = wandb.Histogram(np.array(data))
-        
         if log_dict:
             wandb.log(log_dict, step=iteration)
-    
-    def log_action_distributions(self, actions, iteration):
-        """Log action distribution as histogram only."""
-        if self.wandb_run is None:
-            return
-        
-        # Only log histogram
-        actions_np = np.array(actions)
-        log_dict = {
-            'actions/distribution': wandb.Histogram(actions_np)
-        }
-        wandb.log(log_dict, step=iteration)
     
     def log_training_metrics(self, iteration, metrics):
         """Log key training performance metrics (time series plots)."""
