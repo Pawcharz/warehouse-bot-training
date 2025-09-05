@@ -47,8 +47,8 @@ def main():
     
     # Create environment
     print("\nCreating environment...")
-    # env = make_env(time_scale=1, no_graphics=False, verbose=True, env_type="multimodal", env_path='environment_builds/stage2/S2_Find_Items_64x36camera120deg_rew0_100/Warehouse_Bot.exe')
-    env = make_env(time_scale=2, no_graphics=True, verbose=True, env_type="multimodal", env_path='environment_builds/stage2/S2_Find_Items_64x36camera120deg_rew0_20_100/Warehouse_Bot.exe')
+    env = make_env(time_scale=1, no_graphics=False, verbose=True, env_type="multimodal", env_path='environment_builds/stage2/S2_Find_Items_64x36camera120deg_rew0_100/Warehouse_Bot.exe')
+    # env = make_env(time_scale=1, no_graphics=True, verbose=True, env_type="multimodal", env_path='environment_builds/stage2/S2_Find_Items_64x36camera120deg_rew0_20_100/Warehouse_Bot.exe')
 
     try:
         print(env.observation_space)
@@ -80,8 +80,8 @@ def main():
             'lambda': 0.95,
             'clip_eps': 0.2,
             'ppo_epochs': 4,
-            'batch_size': 64,
-            'update_timesteps': 1024,
+            'batch_size': 128,
+            'update_timesteps': 2048,
             'lr': 3e-4, 
             'visual_lr': 1e-4,
             'vector_lr': 1e-4,
@@ -94,13 +94,17 @@ def main():
             'device': device,
             'seed': seed,
             'value_clip_eps': 0.2,
-            'experiment_name': f'test_wandb_1',
-            'experiment_notes': 'test wandb logging',
+            'experiment_name': f'ppo_camera_120deg_0_20_100_find_2_items_attempt_0',
+            'experiment_notes': 'ppo with 120deg camera with rewards: [0, 20, 100] with task of only finding 2 items',
         }
-        training_iterations = 20
+        training_iterations = 200
 
         # Create model
         model_net = ActorCriticMultimodal(act_dim, visual_obs_size=obs_dim_visual, vector_obs_size=obs_dim_vector, device=device)
+        
+        # Load model
+        # model_net = ActorCriticMultimodal(act_dim, visual_obs_size=obs_dim_visual, vector_obs_size=obs_dim_vector, device=device)
+        # model_net.load_state_dict(th.load(f"saved_models/custom/ppo_camera_find_2_items_120deg_0_20_100_"))
         
         # Count and display parameters
         model_params = count_parameters(model_net)
@@ -139,8 +143,8 @@ def main():
         
         # Save model (optional)
         try:
-            save_dir = get_default_save_dir("custom", "test")
-            filename = create_model_filename("tensorboard_test", seed)
+            save_dir = get_default_save_dir("custom", "ppo_camera_120deg_0_20_100_find_2_items_attempt_0")
+            filename = create_model_filename("ppo_camera_120deg_0_20_100_find_2_items_attempt_0", seed)
             
             model_path = save_model_checkpoint(
                 model=agent.model,
