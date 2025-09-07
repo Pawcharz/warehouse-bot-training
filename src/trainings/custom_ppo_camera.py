@@ -27,8 +27,7 @@ from src.environments.env_utils import make_env
 
 # Algorithm imports
 from src.algorithms.PPO_algorithm import PPOAgent
-# from src.algorithms.PPO_algorithm_returns_clipping import PPOAgent
-from src.models.actor_critic_multimodal import ActorCriticMultimodal
+from src.models.actor_critic_multimodal_embedding import ActorCriticMultimodal
 from src.models.model_utils import count_parameters, save_model_checkpoint, create_model_filename, get_default_save_dir
 from src.utils.evaluation import evaluate_policy
 
@@ -46,8 +45,8 @@ def main():
     
     # Create environment
     print("\nCreating environment...")
-    env = make_env(time_scale=1, no_graphics=False, verbose=True, env_type="multimodal", env_path='environment_builds/stage2/S2_Find_Items_64x36camera120deg_rew0_100/Warehouse_Bot.exe')
-    # env = make_env(time_scale=1, no_graphics=True, verbose=True, env_type="multimodal", env_path='environment_builds/stage2/S2_Find_Items_64x36camera120deg_rew0_20_100/Warehouse_Bot.exe')
+    env = make_env(time_scale=1, no_graphics=False, verbose=True, env_type="multimodal", env_path='environment_builds/stage2/S2_Find_2Items_64x36camera120deg_rew0_100/Warehouse_Bot.exe')
+    # env = make_env(time_scale=3, no_graphics=True, verbose=True, env_type="multimodal", env_path='environment_builds/stage2/S2_Find_2Items_64x36camera120deg_rew0_20_100/Warehouse_Bot.exe')
 
     try:
         print(env.observation_space)
@@ -88,16 +87,18 @@ def main():
             'val_loss_coef': 0.5,
             'ent_loss_coef': 0.015,
             'weight_decay': 1e-5,
+            'scheduler_step_size': 100,
+            'scheduler_gamma': 0.95,
             'device': device,
             'seed': seed,
             'value_clip_eps': 0.2,
-            'experiment_name': f'ppo_camera_120deg_0_20_100_find_2_items_attempt_0',
+            'experiment_name': f'ppo_camera_120deg_0_20_100_find_2_items_task_embedding_attempt_0',
             'experiment_notes': 'ppo with 120deg camera with rewards: [0, 20, 100] with task of only finding 2 items',
         }
         training_iterations = 200
 
         # Create model
-        model_net = ActorCriticMultimodal(act_dim, visual_obs_size=obs_dim_visual, vector_obs_size=obs_dim_vector, device=device)
+        model_net = ActorCriticMultimodal(act_dim, visual_obs_size=obs_dim_visual, num_items=2, device=device)
         
         # Load model
         # model_net = ActorCriticMultimodal(act_dim, visual_obs_size=obs_dim_visual, vector_obs_size=obs_dim_vector, device=device)
@@ -140,8 +141,8 @@ def main():
         
         # Save model (optional)
         try:
-            save_dir = get_default_save_dir("custom", "ppo_camera_120deg_0_20_100_find_2_items_attempt_0")
-            filename = create_model_filename("ppo_camera_120deg_0_20_100_find_2_items_attempt_0", seed)
+            save_dir = get_default_save_dir("custom", "ppo_camera_120deg_0_20_100_find_2_items_task_embedding_attempt_0")
+            filename = create_model_filename("ppo_camera_120deg_0_20_100_find_2_items_task_embedding_attempt_0", seed)
             
             model_path = save_model_checkpoint(
                 model=agent.model,

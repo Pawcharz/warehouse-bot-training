@@ -98,13 +98,13 @@ class PPOAgent:
         
         # Group parameters by component
         visual_params = list(self.model.visual_encoder_cnn.parameters()) + list(self.model.visual_encoder_mlp.parameters())
-        vector_params = list(self.model.vector_encoder.parameters())
+        vector_params = list(self.model.task_encoder.parameters())
         general_params = list(self.model.policy_net.parameters()) + list(self.model.value_net.parameters())
         
         # Create optimizer with parameter groups
         param_groups = [
             {'params': visual_params, 'lr': visual_lr, 'name': 'visual_encoder'},
-            {'params': vector_params, 'lr': vector_lr, 'name': 'vector_encoder'},
+            {'params': vector_params, 'lr': vector_lr, 'name': 'task_encoder'},
             {'params': general_params, 'lr': general_lr, 'name': 'policy_value'}
         ]
         
