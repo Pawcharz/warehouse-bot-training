@@ -92,7 +92,7 @@ def main():
             'device': device,
             'seed': seed,
             'value_clip_eps': 0.2,
-            'experiment_name': f'ppo_camera_120deg_0_20_100_find_2_items_task_embedding_attempt_0',
+            'experiment_name': f'ppo_camera_120deg_0_20_100_find_2_items_task_embedding_attempt_0.1_default_weights',
             'experiment_notes': 'ppo with 120deg camera with rewards: [0, 20, 100] with task of only finding 2 items',
         }
         training_iterations = 200
@@ -141,8 +141,8 @@ def main():
         
         # Save model (optional)
         try:
-            save_dir = get_default_save_dir("custom", "ppo_camera_120deg_0_20_100_find_2_items_task_embedding_attempt_0")
-            filename = create_model_filename("ppo_camera_120deg_0_20_100_find_2_items_task_embedding_attempt_0", seed)
+            save_dir = get_default_save_dir("custom", "ppo_camera_120deg_0_20_100_find_2_items_task_embedding_attempt_0.1_default_weights")
+            filename = create_model_filename("ppo_camera_120deg_0_20_100_find_2_items_task_embedding_attempt_0.1_default_weights", seed)
             
             model_path = save_model_checkpoint(
                 model=agent.model,

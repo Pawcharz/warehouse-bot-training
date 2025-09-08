@@ -147,7 +147,7 @@ def main():
         start_time = time.time()
         
         # Training iterations
-        agent.train(env, iterations=training_iterations)
+        agent.train(env, iterations=training_iterations, start_iteration=model_net.training_iterations)
         
         training_time = time.time() - start_time
         print(f"\nDelivery training completed in {training_time:.2f} seconds")

@@ -285,8 +285,8 @@ class PPOAgent:
 
         return losses
     
-    def train(self, env, iterations):
-        for iteration in range(iterations):
+    def train(self, env, iterations, start_iteration=0):
+        for iteration in range(start_iteration, start_iteration + iterations):
             time_start = time.time()
           
             # Reset seeds for this iteration to ensure reproducibility
