@@ -98,22 +98,6 @@ class ActorCriticMultimodal(nn.Module):
         if device is not None:
             self.to(self.device)
             
-        self._init_weights()
-
-    def _init_weights(self):
-        """Initialize network weights for stable training"""
-        for module in self.modules():
-            if isinstance(module, nn.Conv2d):
-                nn.init.kaiming_normal_(module.weight, mode='fan_out', nonlinearity='relu')
-                if module.bias is not None:
-                    nn.init.constant_(module.bias, 0)
-            elif isinstance(module, nn.Linear):
-                nn.init.orthogonal_(module.weight, gain=np.sqrt(2))
-                nn.init.constant_(module.bias, 0)
-            elif isinstance(module, (nn.BatchNorm2d, nn.LayerNorm)):
-                nn.init.constant_(module.weight, 1)
-                nn.init.constant_(module.bias, 0)
-
     def _encode_observations(self, observations):
         """Shared encoding for both policy and value networks"""
         image = observations["visual"]

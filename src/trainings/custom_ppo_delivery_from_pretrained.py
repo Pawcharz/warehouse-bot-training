@@ -31,7 +31,7 @@ from src.environments.env_utils import make_env
 
 # Algorithm imports
 from src.algorithms.PPO_algorithm import PPOAgent
-from src.models.actor_critic_multimodal import ActorCriticMultimodal
+from src.models.actor_critic_multimodal_embedding import ActorCriticMultimodal
 from src.models.model_utils import count_parameters, save_model_checkpoint, create_model_filename, get_default_save_dir, load_model_checkpoint
 from src.utils.evaluation import evaluate_policy
 
@@ -99,16 +99,16 @@ def main():
             'device': device,
             'seed': seed,
             'value_clip_eps': 0.2,
-            'experiment_name': f'ppo_delivery_camera_120deg_0_20_100_100_find_deliver_2_items_attempt_0',
+            'experiment_name': f'ppo_camera_120deg_0_20_100_find_2_items_deliver_task_embedding_attempt_1',
             'experiment_notes': 'PPO delivery training with 120deg camera, rewards: [0, 20, 100, 100], find and deliver item task with 2 items',
         }
         training_iterations = 300
         
         # Create model architecture (same as original)
-        model_net = ActorCriticMultimodal(act_dim, visual_obs_size=obs_dim_visual, vector_obs_size=obs_dim_vector, device=device)
+        model_net = ActorCriticMultimodal(act_dim, visual_obs_size=obs_dim_visual, num_items=2, device=device)
         
         # Load pre-trained model
-        pretrained_model_path = "saved_models/custom/stage2/ppo_camera_120deg_0_20_100_find_2_items_attempt_0/ppo_camera_120deg_0_20_100_find_2_items_attempt_0_seed_0.pth"
+        pretrained_model_path = "saved_models/custom/ppo_camera_120deg_0_20_100_find_2_items_task_embedding_attempt_1_default_weights/ppo_camera_120deg_0_20_100_find_2_items_task_embedding_attempt_1_default_weights_seed_0.pth"
         print(f"\nLoading pre-trained model from: {pretrained_model_path}")
         
         if os.path.exists(pretrained_model_path):
@@ -117,7 +117,7 @@ def main():
                     model_path=pretrained_model_path,
                     model=model_net,
                     device=device,
-                    load_optimizer=False  # We'll create a new optimizer for delivery training
+                    load_optimizer=False  # Create new optimizer for delivery training
                 )
                 print(f"Successfully loaded pre-trained model")
                 print(f"Original model trained for {checkpoint.get('training_iterations', 'unknown')} iterations")
@@ -146,8 +146,9 @@ def main():
         print("\nStarting delivery training...")
         start_time = time.time()
         
-        # Training iterations
-        agent.train(env, iterations=training_iterations, start_iteration=model_net.training_iterations)
+        # Training iterations - get from checkpoint data
+        pretrained_iterations = checkpoint.get('training_iterations', 0)
+        agent.train(env, iterations=training_iterations, start_iteration=pretrained_iterations)
         
         training_time = time.time() - start_time
         print(f"\nDelivery training completed in {training_time:.2f} seconds")
@@ -167,7 +168,7 @@ def main():
         # Save delivery model with new name and path
         try:
             save_dir = get_default_save_dir("custom", "delivery")  # Use custom/delivery subdirectory
-            filename = create_model_filename("ppo_delivery_camera_120deg_0_20_100_100_find_deliver_2_items", seed)
+            filename = create_model_filename("ppo_delivery_camera_120deg_0_20_100_100_find_deliver_2_items_attempt_1", seed)
             
             model_path = save_model_checkpoint(
                 model=agent.model,

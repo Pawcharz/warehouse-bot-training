@@ -28,20 +28,10 @@ class ActorCritic(nn.Module):
             nn.Linear(128, 1)
         )
         
-        # Initialize weights deterministically
-        self._init_weights()
-        
         # Move model to device if specified
         if device is not None:
             self.to(device)
     
-    def _init_weights(self):
-        """Initialize network weights deterministically"""
-        for module in self.modules():
-            if isinstance(module, nn.Linear):
-                nn.init.orthogonal_(module.weight)
-                nn.init.constant_(module.bias, 0.0)
-
     def forward(self, x):
         return self.actor(x), self.critic(x)
 

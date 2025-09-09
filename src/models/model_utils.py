@@ -24,27 +24,6 @@ def save_model_checkpoint(
     final_std_return: float,
     additional_info: Optional[Dict[str, Any]] = None
 ) -> str:
-    """
-    Save a model checkpoint with all necessary information for later loading.
-    
-    Args:
-        model: The trained model to save
-        optimizer: The optimizer state to save
-        save_dir: Directory to save the checkpoint in
-        filename: Name of the checkpoint file
-        settings: Training settings dictionary
-        seed: Random seed used for training
-        training_iterations: Number of training iterations completed
-        final_mean_return: Final evaluation mean return
-        final_std_return: Final evaluation standard deviation of return
-        additional_info: Optional additional information to save
-        
-    Returns:
-        str: Path to the saved checkpoint file
-        
-    Raises:
-        Exception: If saving fails
-    """
     try:
         # Create save directory if it doesn't exist
         os.makedirs(save_dir, exist_ok=True)
@@ -84,23 +63,6 @@ def load_model_checkpoint(
     load_optimizer: bool = False,
     optimizer: Optional[th.optim.Optimizer] = None
 ) -> Tuple[th.nn.Module, Dict[str, Any]]:
-    """
-    Load a model checkpoint from file.
-    
-    Args:
-        model_path: Path to the checkpoint file
-        model: Model instance to load weights into
-        device: Device to load the model on
-        load_optimizer: Whether to also load optimizer state
-        optimizer: Optimizer instance to load state into (required if load_optimizer=True)
-        
-    Returns:
-        Tuple[th.nn.Module, Dict[str, Any]]: Loaded model and checkpoint metadata
-        
-    Raises:
-        FileNotFoundError: If checkpoint file doesn't exist
-        Exception: If loading fails
-    """
     if not os.path.exists(model_path):
         raise FileNotFoundError(f"Model checkpoint not found at: {model_path}")
     
@@ -138,19 +100,6 @@ def load_model_checkpoint(
 
 
 def get_model_info(checkpoint_path: str) -> Dict[str, Any]:
-    """
-    Get information about a saved model checkpoint without loading the full model.
-    
-    Args:
-        checkpoint_path: Path to the checkpoint file
-        
-    Returns:
-        Dict[str, Any]: Dictionary containing checkpoint metadata
-        
-    Raises:
-        FileNotFoundError: If checkpoint file doesn't exist
-        Exception: If loading metadata fails
-    """
     if not os.path.exists(checkpoint_path):
         raise FileNotFoundError(f"Model checkpoint not found at: {checkpoint_path}")
     
@@ -174,79 +123,18 @@ def get_model_info(checkpoint_path: str) -> Dict[str, Any]:
     except Exception as e:
         raise Exception(f"Failed to load checkpoint metadata: {e}")
 
-
-def list_available_models(models_dir: str = "saved_models") -> Dict[str, Dict[str, Any]]:
-    """
-    List all available model checkpoints in the models directory.
-    
-    Args:
-        models_dir: Directory to search for models
-        
-    Returns:
-        Dict[str, Dict[str, Any]]: Dictionary mapping model paths to their metadata
-    """
-    available_models = {}
-    
-    if not os.path.exists(models_dir):
-        print(f"Models directory not found: {models_dir}")
-        return available_models
-    
-    # Walk through the models directory
-    for root, dirs, files in os.walk(models_dir):
-        for file in files:
-            if file.endswith('.pth'):
-                model_path = os.path.join(root, file)
-                try:
-                    metadata = get_model_info(model_path)
-                    available_models[model_path] = metadata
-                except Exception as e:
-                    print(f"Warning: Could not read metadata for {model_path}: {e}")
-    
-    return available_models
-
-
 def create_model_filename(
     experiment_name: str,
     seed: int,
     extension: str = ".pth"
 ) -> str:
-    """
-    Create a standardized filename for model checkpoints.
-    
-    Args:
-        experiment_name: Name of the experiment
-        seed: Random seed used
-        extension: File extension (default: .pth)
-        
-    Returns:
-        str: Standardized filename
-    """
     return f"{experiment_name}_seed_{seed}{extension}"
 
 
 def get_default_save_dir(experiment_type: str = "custom", stage: str = "stage1") -> str:
-    """
-    Get the default save directory for model checkpoints.
-    
-    Args:
-        experiment_type: Type of experiment (e.g., "custom", "baseline")
-        stage: Training stage (e.g., "stage1", "stage2")
-        
-    Returns:
-        str: Default save directory path
-    """
     return os.path.join("saved_models", experiment_type, stage)
 
 def count_parameters(model):
-    """
-    Count parameters in each block of the network and total parameters.
-    
-    Args:
-        model: PyTorch model
-        
-    Returns:
-        dict: Dictionary containing parameter counts for each block and total
-    """
     total_params = 0
     block_params = {}
     

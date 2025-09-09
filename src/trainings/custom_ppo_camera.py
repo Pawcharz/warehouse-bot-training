@@ -92,17 +92,13 @@ def main():
             'device': device,
             'seed': seed,
             'value_clip_eps': 0.2,
-            'experiment_name': f'ppo_camera_120deg_0_20_100_find_2_items_task_embedding_attempt_0.1_default_weights',
+            'experiment_name': f'ppo_camera_120deg_0_20_100_find_2_items_task_embedding_attempt_1',
             'experiment_notes': 'ppo with 120deg camera with rewards: [0, 20, 100] with task of only finding 2 items',
         }
         training_iterations = 200
 
         # Create model
         model_net = ActorCriticMultimodal(act_dim, visual_obs_size=obs_dim_visual, num_items=2, device=device)
-        
-        # Load model
-        # model_net = ActorCriticMultimodal(act_dim, visual_obs_size=obs_dim_visual, vector_obs_size=obs_dim_vector, device=device)
-        # model_net.load_state_dict(th.load(f"saved_models/custom/ppo_camera_find_2_items_120deg_0_20_100_"))
         
         # Count and display parameters
         model_params = count_parameters(model_net)
@@ -141,8 +137,8 @@ def main():
         
         # Save model (optional)
         try:
-            save_dir = get_default_save_dir("custom", "ppo_camera_120deg_0_20_100_find_2_items_task_embedding_attempt_0.1_default_weights")
-            filename = create_model_filename("ppo_camera_120deg_0_20_100_find_2_items_task_embedding_attempt_0.1_default_weights", seed)
+            save_dir = get_default_save_dir("custom", "ppo_camera_120deg_0_20_100_find_2_items_task_embedding_attempt_1")
+            filename = create_model_filename("ppo_camera_120deg_0_20_100_find_2_items_task_embedding_attempt_1", seed)
             
             model_path = save_model_checkpoint(
                 model=agent.model,

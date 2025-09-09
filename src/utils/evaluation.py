@@ -19,28 +19,16 @@ from typing import Tuple
 def prepare_observation(obs, device: th.device, obs_type: str = "vector"):
     """
     Prepare observation for model input based on observation type
-    
-    Args:
-        obs: Raw observation from environment
-        device: PyTorch device to move tensors to
-        obs_type: Type of observation ("vector", "multimodal", or "auto")
-    
-    Returns:
-        Properly formatted observation for model input
     """
     if obs_type == "auto":
-        # Auto-detect observation type
         if isinstance(obs, dict):
             obs_type = "multimodal"
         else:
             obs_type = "vector"
     
     if obs_type == "multimodal":
-        # For multimodal observations, return the dict as-is
-        # The model's _encode_observations method will handle tensor conversion
         return obs
     elif obs_type == "vector":
-        # For vector observations, convert to tensor
         if not isinstance(obs, th.Tensor):
             obs_tensor = th.tensor(obs, dtype=th.float32, device=device)
         else:
@@ -52,20 +40,6 @@ def prepare_observation(obs, device: th.device, obs_type: str = "vector"):
 
 def evaluate_policy(agent, env, num_episodes: int = 10, seed: int = 0, 
                    obs_type: str = "auto", verbose: bool = True) -> Tuple[float, float, float, float]:
-    """
-    Evaluate a trained policy on the given environment
-    
-    Args:
-        agent: Trained agent with a model that has get_action method
-        env: Environment to evaluate on
-        num_episodes: Number of episodes to evaluate
-        seed: Random seed for reproducibility
-        obs_type: Type of observation ("vector", "multimodal", or "auto")
-        verbose: Whether to print episode results
-    
-    Returns:
-        Tuple of (mean_return, std_return, mean_steps, std_steps)
-    """
     returns = []
     steps = []
     
@@ -80,14 +54,12 @@ def evaluate_policy(agent, env, num_episodes: int = 10, seed: int = 0,
         truncated = False
         
         while not (done or truncated):
-            # Prepare observation for model input
             model_obs = prepare_observation(obs, agent.device, obs_type)
             
-            # Get action from policy (deterministic for evaluation)
             with th.no_grad():
                 action, _, _, _ = agent.model.get_action(model_obs, deterministic=True)
             
-            # Take action in environment
+            # Take action in the environment
             obs, reward, done, truncated, _ = env.step(action.item())
             episode_return += reward
             episode_steps += 1
