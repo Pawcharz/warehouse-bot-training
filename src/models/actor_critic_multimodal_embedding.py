@@ -8,9 +8,10 @@ class TaskEncoder(nn.Module):
     def __init__(self, num_items, item_embedding_dim, output_dim):
         super().__init__()
         
+        # possible item states: [None, item1, item2, ...]
         # Embedding table: each item index -> embedding vector
         self.num_items = num_items
-        self.item_embedding = nn.Embedding(num_items, item_embedding_dim)
+        self.item_embedding = nn.Embedding(num_items+1, item_embedding_dim) # +1 for "None" state
         self.item_embedding_dim = item_embedding_dim
         
         # Task embedding size is 2 * item_embedding_dim (pick + held item embeddings)
@@ -28,7 +29,7 @@ class TaskEncoder(nn.Module):
 
     def forward(self, vector):
         # vector should contain item indices [pick_item_idx, held_item_idx]
-        vector = vector.long()
+        vector = vector.int()
 
         pick_emb = self.item_embedding(vector[:, 0])
         held_emb = self.item_embedding(vector[:, 1])
@@ -41,7 +42,7 @@ class TaskEncoder(nn.Module):
 
     def add_item(self, new_num_items):
         if self.num_items < new_num_items:
-            new_item_embedding = nn.Embedding(new_num_items, self.item_embedding_dim)
+            new_item_embedding = nn.Embedding(new_num_items + 1, self.item_embedding_dim)
 
             # Copy existing embeddings
             with th.no_grad():
@@ -53,6 +54,7 @@ class TaskEncoder(nn.Module):
             print(f"Extended task encoder from {self.num_items} items to {new_num_items}")
         else:
             print(f"Cannot extend task encoder. New number of items must be larger than current")
+
 # Actor-Critic Network for multimodal observations with separate policy and value networks
 class ActorCriticMultimodal(nn.Module):
     def __init__(self, act_dim, visual_obs_size, num_items, device=None):
@@ -108,7 +110,7 @@ class ActorCriticMultimodal(nn.Module):
             nn.LayerNorm(visual_embedding_size)
         )
         
-        # Task encoder: converts item indices to embeddings and processes them
+        # Task encoder: converts item indices to embeddings and extracts features
         self.task_encoder = TaskEncoder(
             num_items=num_items,
             item_embedding_dim=item_embedding_dim,
@@ -161,13 +163,15 @@ class ActorCriticMultimodal(nn.Module):
         image = image.float()
         
         # Extract features from both modalities
+
+        # Image
         image_features = self.visual_encoder_cnn(image)
         image_features = self.visual_encoder_mlp(image_features)
 
-        # Convert item indices to embeddings and process them in one step
-        task_features = self.task_encoder(vector)  # Get embeddings and encode them
+        # Items/Tasks
+        task_features = self.task_encoder(vector)
 
-        # Fuse modalities by concatenation
+        # Fusion
         fused = th.cat([image_features, task_features], dim=1)
         
         return fused
