@@ -15,6 +15,19 @@ if root_dir not in sys.path:
 from src.algorithms.RewardsNormalizer import RewardNormalizer
 from src.utils.wandb_logger import WandBLogger
 
+def create_optimizer_and_scheduler(param_groups, settings):
+    
+    weight_decay = settings.get('weight_decay', 1e-5)
+    
+    optimizer = optim.Adam(param_groups, weight_decay=weight_decay)
+    
+    scheduler_step_size = settings.get('scheduler_step_size', 100)
+    scheduler_gamma = settings.get('scheduler_gamma', 0.95)
+    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=scheduler_step_size, gamma=scheduler_gamma)
+    
+    return optimizer, scheduler
+
+# Generalized Advantage Estimation
 class GAE:
     def __init__(self, gamma: float, lam: float):
         self.lam = lam
@@ -80,40 +93,15 @@ class RolloutBuffer:
 
 # PPO Agent - FIX hyperparameters logging
 class PPOAgent:
-    def __init__(self, model_net, settings):
+    def __init__(self, model_net, optimizer, scheduler, settings):
         self.settings = settings
         self.seed = settings.get('seed', 0)
-        # Set seeds for reproducibility
         self.apply_seed(self.seed)
 
-        # Initialize model and device
         self.device = settings['device']
         self.model = model_net.to(self.device)
-        self.weight_decay = settings.get('weight_decay', 1e-5)
-        
-        # Create parameter groups with different learning rates
-        general_lr = settings['lr']
-        visual_lr = settings.get('visual_lr', general_lr)
-        vector_lr = settings.get('vector_lr', general_lr)
-        
-        # Group parameters by component
-        visual_params = list(self.model.visual_encoder_cnn.parameters()) + list(self.model.visual_encoder_mlp.parameters())
-        vector_params = list(self.model.task_encoder.parameters())
-        general_params = list(self.model.policy_net.parameters()) + list(self.model.value_net.parameters())
-        
-        # Create optimizer with parameter groups
-        param_groups = [
-            {'params': visual_params, 'lr': visual_lr, 'name': 'visual_encoder'},
-            {'params': vector_params, 'lr': vector_lr, 'name': 'task_encoder'},
-            {'params': general_params, 'lr': general_lr, 'name': 'policy_value'}
-        ]
-        
-        self.optimizer = optim.Adam(param_groups, weight_decay=self.weight_decay)
-        
-        # Add learning rate scheduler for gradual decay
-        scheduler_step_size = settings.get('scheduler_step_size', 100)
-        scheduler_gamma = settings.get('scheduler_gamma', 0.95)
-        self.scheduler = optim.lr_scheduler.StepLR(self.optimizer, step_size=scheduler_step_size, gamma=scheduler_gamma)
+        self.optimizer = optimizer
+        self.scheduler = scheduler
 
         # Initialize GAE
         self.gae = GAE(
@@ -129,11 +117,10 @@ class PPOAgent:
 
         # PPO specific settings
         self.clip_eps = settings.get('clip_eps', 0.2)
-        self.value_clip_eps = settings.get('value_clip_eps', None)  # Value clipping for stability
-        self.max_grad_norm = settings.get('max_grad_norm', 5.0)  # Updated default to match new clipping
+        self.value_clip_eps = settings.get('value_clip_eps', None)
+        self.max_grad_norm = settings.get('max_grad_norm', 5.0)
         
         # Store other settings as instance variables for logging
-        self.learning_rate = settings.get('lr', 3e-4)
         self.gamma = settings.get('gamma', 0.99)
         self.lambda_val = settings.get('lambda', 0.95)
         self.ppo_epochs = settings.get('ppo_epochs', 4)
@@ -188,8 +175,8 @@ class PPOAgent:
         if self.value_clip_eps is not None and mb_old_values is not None:
             # Clip new values relative to old values (SB3 approach)
             value_pred_clipped = mb_old_values + th.clamp(
-                values - mb_old_values, 
-                -self.value_clip_eps, 
+                values - mb_old_values,
+                -self.value_clip_eps,
                 self.value_clip_eps
             )
             value_losses = (values - mb_returns) ** 2

@@ -27,12 +27,12 @@ class TaskEncoder(nn.Module):
             nn.LayerNorm(output_dim)
         )
 
-    def forward(self, vector):
+    def forward(self, task_vector):
         # vector should contain item indices [pick_item_idx, held_item_idx]
-        vector = vector.int()
+        task_vector = task_vector.int()
 
-        pick_emb = self.item_embedding(vector[:, 0])
-        held_emb = self.item_embedding(vector[:, 1])
+        pick_emb = self.item_embedding(task_vector[:, 0])
+        held_emb = self.item_embedding(task_vector[:, 1])
         
         task_emb = th.cat([pick_emb, held_emb], dim=-1)  # Shape: (batch_size, 2 * item_embedding_dim)
         

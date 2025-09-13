@@ -26,10 +26,24 @@ if root_dir not in sys.path:
 from src.environments.env_utils import make_env
 
 # Algorithm imports
-from src.algorithms.PPO_algorithm import PPOAgent
+from src.algorithms.PPO_algorithm import PPOAgent, create_optimizer_and_scheduler
 from src.models.actor_critic_multimodal_embedding import ActorCriticMultimodal
 from src.models.model_utils import count_parameters, save_model_checkpoint, create_model_filename, get_default_save_dir
 from src.utils.evaluation import evaluate_policy
+
+def create_param_groups(model, visual_lr, task_lr, general_lr):
+    
+    visual_params = list(model.visual_encoder_cnn.parameters()) + list(model.visual_encoder_mlp.parameters())
+    task_params = list(model.task_encoder.parameters())
+    general_params = list(model.policy_net.parameters()) + list(model.value_net.parameters())
+    
+    param_groups = [
+        {'params': visual_params, 'lr': visual_lr, 'name': 'visual_encoder'},
+        {'params': task_params, 'lr': task_lr, 'name': 'task_encoder'},
+        {'params': general_params, 'lr': general_lr, 'name': 'policy_value'}
+    ]
+    
+    return param_groups
 
 def main():
     print("Starting PPO Training for Warehouse Stage2...")
@@ -80,9 +94,6 @@ def main():
             'ppo_epochs': 4,
             'batch_size': 128,
             'update_timesteps': 2048,
-            'lr': 3e-4, 
-            'visual_lr': 1e-4,
-            'vector_lr': 1e-4,
             'max_grad_norm': 0.5,
             'val_loss_coef': 0.5,
             'ent_loss_coef': 0.015,
@@ -100,6 +111,10 @@ def main():
         # Create model
         model_net = ActorCriticMultimodal(act_dim, visual_obs_size=obs_dim_visual, num_items=2, device=device)
         
+        # Create parameter groups and optimizer/scheduler
+        param_groups = create_param_groups(model_net, visual_lr=1e-4, task_lr=1e-4, general_lr=3e-4)
+        optimizer, scheduler = create_optimizer_and_scheduler(param_groups, settings)
+        
         # Count and display parameters
         model_params = count_parameters(model_net)
         print(f"\nModel parameters: {model_params}")
@@ -111,7 +126,7 @@ def main():
         
         # Create PPO agent
         print("\nCreating PPO agent...")
-        agent = PPOAgent(model_net, settings)
+        agent = PPOAgent(model_net, optimizer, scheduler, settings)
         
         # Training
         print("\nStarting training...")

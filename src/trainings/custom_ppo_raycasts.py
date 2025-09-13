@@ -28,7 +28,6 @@ from src.environments.env_utils import make_env
 
 # Algorithm imports
 from src.algorithms.PPO_algorithm import PPOAgent
-# from src.algorithms.PPO_algorithm_returns_clipping import PPOAgent
 from src.models.actor_critic import ActorCritic
 from src.models.model_utils import count_parameters, save_model_checkpoint, create_model_filename, get_default_save_dir
 

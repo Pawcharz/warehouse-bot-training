@@ -18,7 +18,7 @@ os.chdir(ROOT_DIR)
 sys.path.insert(0, '.')
 
 # Import and run the training script
-from src.trainings.custom_ppo_delivery_from_pretrained import main
+from src.trainings.custom_ppo_camera import main
 
 if __name__ == "__main__":
     main()
