@@ -177,13 +177,11 @@ class WandBLogger:
         wandb.log(log_dict, step=iteration)
     
     def log_console_training_summary(self, iteration, ep_returns, time_taken, mean_return, std_return,
-                                     mean_steps, std_steps, mean_losses, gate_coeff, current_lrs):
+                                     mean_steps, std_steps, mean_losses, current_lrs):
         """Log training summary to console."""
         print(f"\n=== Iteration {iteration} ===")
         print(f"Episodes: {len(ep_returns)}; Return: {mean_return:.2f} +- {std_return:.2f}; Steps: {mean_steps:.1f} +- {std_steps:.1f}; Time: {time_taken:.2f}s")
         print(f"Losses: {', '.join([f'{name}: {loss:.4f}' for name, loss in mean_losses.items()])}")
-        if gate_coeff is not None:
-            print(f"Gate Coeff: {gate_coeff:.4f}")
         print(f"Learning Rates: {[f'{lr:.2e}' for lr in current_lrs]}") 
     
     def close(self):

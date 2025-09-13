@@ -128,7 +128,6 @@ class PPOAgent:
         self.update_timesteps = settings.get('update_timesteps', 1024)
         self.val_loss_coef = settings.get('val_loss_coef', 0.5)
         self.ent_loss_coef = settings.get('ent_loss_coef', 0.01)
-        self.gate_loss_coef = settings.get('gate_loss_coef', 0.0)
         
         # Initialize WandB Logger
         self.ppo_logger = None
@@ -189,26 +188,17 @@ class PPOAgent:
         # Entropy loss
         entropy_bonus = entropy.mean()
 
-        gate_loss = th.tensor(0.0, device=self.device, requires_grad=True)
-        # Gate loss: penalize gate values too close to 0 or 1 (encourage values near 0.5)
-        if self.gate_loss_coef > 0.0:
-            gate = self.model.get_current_gate()
-            if gate is not None:
-                # gate should be in [0, 1], penalize if too close to 0 or 1
-                # Use (gate - 0.5)^2, mean over batch
-                gate_loss = self.gate_loss_coef * ((gate - 0.5) ** 2).mean()
-
         # Apply coefficients
         value_loss *= self.settings['val_loss_coef']
         entropy_bonus *= self.settings['ent_loss_coef']
 
         # Return combined loss for single optimizer
-        total_loss = policy_loss + value_loss - entropy_bonus + gate_loss
-        return total_loss, policy_loss, value_loss, entropy_bonus, gate_loss
+        total_loss = policy_loss + value_loss - entropy_bonus
+        return total_loss, policy_loss, value_loss, entropy_bonus
     
     # Returns average loss of the batch
     def update(self, obs, acts, old_logps, returns, advantages, old_values=None, iteration=None):
-        losses = {"total_loss": [], "policy_loss": [], "value_loss": [], "entropy_loss": [], "gate_loss": []}
+        losses = {"total_loss": [], "policy_loss": [], "value_loss": [], "entropy_loss": []}
         
         # Capture parameters before optimization for change tracking
         old_params = self.ppo_logger.capture_parameters(self.model)
@@ -221,7 +211,7 @@ class PPOAgent:
             rng = np.random.RandomState(self.seed + epoch)
             idxs = rng.permutation(batch_len)
             
-            epoch_losses = {"total_loss": [], "policy_loss": [], "value_loss": [], "entropy_loss": [], "gate_loss": []}
+            epoch_losses = {"total_loss": [], "policy_loss": [], "value_loss": [], "entropy_loss": []}
             
             for start in range(0, batch_len, self.settings['batch_size']):
                 end = start + self.settings['batch_size']
@@ -240,7 +230,7 @@ class PPOAgent:
                 mb_old_values = old_values[mb_idx] if old_values is not None else None
 
                 # Calculate combined loss for both networks
-                total_loss, policy_loss, value_loss, entropy_bonus, gate_loss = self.calculate_loss(
+                total_loss, policy_loss, value_loss, entropy_bonus = self.calculate_loss(
                     mb_obs, mb_acts, mb_old_logps, mb_returns, mb_advantages, mb_old_values
                 )
                 
@@ -260,7 +250,6 @@ class PPOAgent:
                 epoch_losses["policy_loss"].append(policy_loss.item())
                 epoch_losses["value_loss"].append(value_loss.item())
                 epoch_losses["entropy_loss"].append(entropy_bonus.item())
-                epoch_losses["gate_loss"].append(gate_loss.item())
                 
             # Accumulate losses
             for key in losses.keys():
@@ -354,10 +343,6 @@ class PPOAgent:
             
             returns = th.tensor(returns, dtype=th.float32, device=self.device)
 
-            # Normalize advantages if enabled (helps with stability)
-            if self.settings.get('normalize_advantages', False):
-                advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
-
             # Training step
             losses = self.update(
                 buffer_data['obs'], 
@@ -388,9 +373,6 @@ class PPOAgent:
 
             # Log weight distributions
             self.ppo_logger.log_weight_distributions(self.model, iteration)
-
-            # Get gate coefficient for logging (only if gate loss is used)
-            gate_coeff = self.model.get_latest_gate_coeff() if self.gate_loss_coef > 0.0 else None
             
             # Prepare metrics for logging
             training_metrics = {
@@ -399,8 +381,7 @@ class PPOAgent:
                 'mean_steps': mean_steps,
                 'std_steps': std_steps,
                 'time_taken': time_taken,
-                'episodes_count': len(ep_returns),
-                'gate_coeff': gate_coeff
+                'episodes_count': len(ep_returns)
             }
             
             # Log metrics
@@ -414,7 +395,7 @@ class PPOAgent:
             # Console logging
             self.ppo_logger.log_console_training_summary(
                 iteration, ep_returns, time_taken, mean_return, std_return,
-                mean_steps, std_steps, mean_losses, gate_coeff, current_lrs
+                mean_steps, std_steps, mean_losses, current_lrs
             )
             
             # Step the learning rate scheduler
