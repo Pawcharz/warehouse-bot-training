@@ -205,16 +205,18 @@ class PPOAgent:
       
         for epoch in range(self.settings['ppo_epochs']):
             # Get batch size based on observation type
-            batch_len = len(obs) if not isinstance(obs, dict) else len(list(obs.values())[0])
+            buffer_len = len(obs) if not isinstance(obs, dict) else len(list(obs.values())[0])
             
             # Use deterministic random state for batch sampling
             rng = np.random.RandomState(self.seed + epoch)
-            idxs = rng.permutation(batch_len)
+            idxs = rng.permutation(buffer_len)
             
             epoch_losses = {"total_loss": [], "policy_loss": [], "value_loss": [], "entropy_loss": []}
             
-            for start in range(0, batch_len, self.settings['batch_size']):
+            print(f"Batch length: {buffer_len}, {self.settings['batch_size']}")
+            for start in range(0, buffer_len, self.settings['batch_size']):
                 end = start + self.settings['batch_size']
+                print(f"Start: {start}, End: {end}")
                 mb_idx = idxs[start:end]
 
                 # Handle dictionary or tensor observations

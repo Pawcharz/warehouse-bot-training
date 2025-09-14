@@ -91,6 +91,7 @@ def main():
             'gamma': 0.99,
             'lambda': 0.95,
             'clip_eps': 0.2,
+            'value_clip_eps': 0.2,
             'ppo_epochs': 4,
             'batch_size': 128,
             'update_timesteps': 2048,
@@ -102,7 +103,6 @@ def main():
             'scheduler_gamma': 0.95,
             'device': device,
             'seed': seed,
-            'value_clip_eps': 0.2,
             'experiment_name': f'ppo_camera_120deg_0_20_100_find_2_items_task_embedding_attempt_1',
             'experiment_notes': 'ppo with 120deg camera with rewards: [0, 20, 100] with task of only finding 2 items',
         }
