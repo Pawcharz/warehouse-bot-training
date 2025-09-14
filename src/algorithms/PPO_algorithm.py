@@ -3,9 +3,31 @@ import torch as th
 import torch.optim as optim
 import numpy as np
 import random
-from torch.utils.tensorboard import SummaryWriter
 import os
+import sys
 
+# Add root directory to path to find config module
+current_dir = os.path.dirname(os.path.abspath(__file__))
+root_dir = os.path.dirname(os.path.dirname(current_dir))
+if root_dir not in sys.path:
+    sys.path.insert(0, root_dir)
+
+from src.algorithms.RewardsNormalizer import RewardNormalizer
+from src.utils.wandb_logger import WandBLogger
+
+def create_optimizer_and_scheduler(param_groups, settings):
+    
+    weight_decay = settings.get('weight_decay', 1e-5)
+    
+    optimizer = optim.Adam(param_groups, weight_decay=weight_decay)
+    
+    scheduler_step_size = settings.get('scheduler_step_size', 100)
+    scheduler_gamma = settings.get('scheduler_gamma', 0.95)
+    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=scheduler_step_size, gamma=scheduler_gamma)
+    
+    return optimizer, scheduler
+
+# Generalized Advantage Estimation
 class GAE:
     def __init__(self, gamma: float, lam: float):
         self.lam = lam
@@ -26,60 +48,6 @@ class GAE:
             last_advantage = advantages[t]
 
         return advantages
-
-# Reward Normalizer - dig deeper how it works
-class RewardNormalizer:
-    def __init__(self, gamma=0.99, epsilon=1e-8):
-        self.gamma = gamma
-        self.epsilon = epsilon
-        self.ret = 0.0
-        self.ret_rms = RunningMeanStd()
-    
-    def normalize(self, rewards):
-        """Normalize rewards using running statistics of discounted returns"""
-        normalized_rewards = []
-        
-        for reward in rewards:
-            self.ret = self.ret * self.gamma + reward
-            self.ret_rms.update(self.ret)
-            normalized_reward = reward / np.sqrt(self.ret_rms.var + self.epsilon)
-            normalized_rewards.append(normalized_reward)
-        
-        return np.array(normalized_rewards)
-    
-    def reset(self):
-        """Reset the return tracker"""
-        self.ret = 0.0
-
-class RunningMeanStd:
-    def __init__(self, epsilon=1e-4, shape=()):
-        self.mean = np.zeros(shape, dtype=np.float64)
-        self.var = np.ones(shape, dtype=np.float64)
-        self.count = epsilon
-
-    def update(self, x):
-        # Handle scalar values
-        if np.isscalar(x):
-            batch_mean = x
-            batch_var = 0.0
-            batch_count = 1
-        else:
-            batch_mean = np.mean(x, axis=0)
-            batch_var = np.var(x, axis=0)
-            batch_count = len(x) if len(x.shape) > 0 else 1
-        
-        delta = batch_mean - self.mean
-        tot_count = self.count + batch_count
-
-        new_mean = self.mean + delta * batch_count / tot_count
-        m_a = self.var * self.count
-        m_b = batch_var * batch_count
-        M2 = m_a + m_b + delta ** 2 * self.count * batch_count / tot_count
-        new_var = M2 / tot_count
-
-        self.mean = new_mean
-        self.var = new_var
-        self.count = tot_count
 
 # Rollout Buffer
 class RolloutBuffer:
@@ -123,16 +91,17 @@ class RolloutBuffer:
         for key in self.buffer.keys():
             self.buffer[key] = []
 
-# PPO Agent
+# PPO Agent - FIX hyperparameters logging
 class PPOAgent:
-    def __init__(self, model_net, settings, seed=0):
+    def __init__(self, model_net, optimizer, scheduler, settings):
         self.settings = settings
+        self.seed = settings.get('seed', 0)
+        self.apply_seed(self.seed)
+
         self.device = settings['device']
         self.model = model_net.to(self.device)
-        self.optimizer = optim.Adam(self.model.parameters(), lr=settings['lr'])
-
-        # Set seeds for reproducibility
-        self.set_seed(seed)
+        self.optimizer = optimizer
+        self.scheduler = scheduler
 
         # Initialize GAE
         self.gae = GAE(
@@ -148,11 +117,10 @@ class PPOAgent:
 
         # PPO specific settings
         self.clip_eps = settings.get('clip_eps', 0.2)
-        self.value_clip_eps = settings.get('value_clip_eps', 0.2)  # Separate clipping for value function
-        self.max_grad_norm = settings.get('max_grad_norm', 0.5)
+        self.value_clip_eps = settings.get('value_clip_eps', None)
+        self.max_grad_norm = settings.get('max_grad_norm', 5.0)
         
         # Store other settings as instance variables for logging
-        self.learning_rate = settings.get('lr', 3e-4)
         self.gamma = settings.get('gamma', 0.99)
         self.lambda_val = settings.get('lambda', 0.95)
         self.ppo_epochs = settings.get('ppo_epochs', 4)
@@ -161,44 +129,19 @@ class PPOAgent:
         self.val_loss_coef = settings.get('val_loss_coef', 0.5)
         self.ent_loss_coef = settings.get('ent_loss_coef', 0.01)
         
-        # Store the seed for later use
-        self.seed = seed
-        
-        # Initialize TensorBoard logger
-        self.logger = None
-        if settings.get('use_tensorboard', True):
-            log_dir = settings.get('tensorboard_log_dir', 'runs/ppo_training')
-            experiment_name = settings.get('experiment_name', f'ppo_seed_{seed}')
-            full_log_dir = os.path.join(log_dir, experiment_name)
-            self.logger = SummaryWriter(full_log_dir)
-            
-            # Log hyperparameters
-            self._log_hyperparameters()
+        # Initialize WandB Logger
+        self.ppo_logger = None
+        try:
+            self.ppo_logger = WandBLogger(settings, self.seed)
+        except Exception as e:
+            print(f"Failed to initialize WandB Logger: {e}")
+            raise e
+          
+        # Log hyperparameters (combine settings with seed)
+        hyperparams = settings.copy()
+        self.ppo_logger.log_hyperparameters(hyperparams)
 
-    def _log_hyperparameters(self):
-        """Log hyperparameters to TensorBoard"""
-        if self.logger is None:
-            return
-            
-        # Create a dictionary of hyperparameters to log
-        hparams = {
-            'learning_rate': self.learning_rate,
-            'gamma': self.gamma,
-            'lambda': self.lambda_val,
-            'clip_eps': self.clip_eps,
-            'ppo_epochs': self.ppo_epochs,
-            'batch_size': self.batch_size,
-            'update_timesteps': self.update_timesteps,
-            'val_loss_coef': self.val_loss_coef,
-            'ent_loss_coef': self.ent_loss_coef,
-            'max_grad_norm': self.max_grad_norm,
-            'seed': self.seed
-        }
-        
-        # Log hyperparameters
-        self.logger.add_hparams(hparams, {})
-
-    def set_seed(self, seed):
+    def apply_seed(self, seed):
         """Set seeds for all random components to ensure reproducibility"""
         random.seed(seed)
         np.random.seed(seed)
@@ -207,13 +150,10 @@ class PPOAgent:
         th.cuda.manual_seed_all(seed)
         th.backends.cudnn.deterministic = True
         th.backends.cudnn.benchmark = False
-        
-        # Ensure deterministic model initialization
-        th.nn.init.seed = seed
 
-    def reset_seed_for_iteration(self, iteration):
+    def apply_seed_iteration(self, iteration):
         """Reset seed for each training iteration to ensure reproducibility"""
-        seed = self.settings.get('seed', 0) + iteration
+        seed = self.seed + iteration
         random.seed(seed)
         np.random.seed(seed)
         th.manual_seed(seed)
@@ -221,7 +161,7 @@ class PPOAgent:
         th.cuda.manual_seed_all(seed)
 
     # Returns: loss, policy_loss, value_loss, entropy_bonus
-    def calculate_loss(self, mb_obs, mb_acts, mb_old_logps, mb_returns, mb_advantages):
+    def calculate_loss(self, mb_obs, mb_acts, mb_old_logps, mb_returns, mb_advantages, mb_old_values=None):
         logps, entropy, values = self.model.evaluate_actions(mb_obs, mb_acts)
         ratios = th.exp(logps - mb_old_logps)
 
@@ -230,9 +170,20 @@ class PPOAgent:
         surr2 = th.clamp(ratios, 1 - self.settings['clip_eps'], 1 + self.settings['clip_eps']) * mb_advantages
         policy_loss = -th.min(surr1, surr2).mean()
 
-        # Value loss
-        value_loss = ((values - mb_returns)**2).mean()
-        # print("value loss mean: ", value_loss.mean())
+        # Value loss with optional clipping for stability
+        if self.value_clip_eps is not None and mb_old_values is not None:
+            # Clip new values relative to old values (SB3 approach)
+            value_pred_clipped = mb_old_values + th.clamp(
+                values - mb_old_values,
+                -self.value_clip_eps,
+                self.value_clip_eps
+            )
+            value_losses = (values - mb_returns) ** 2
+            value_losses_clipped = (value_pred_clipped - mb_returns) ** 2
+            value_loss = th.max(value_losses, value_losses_clipped).mean()
+        else:
+            # Standard MSE value loss
+            value_loss = ((values - mb_returns)**2).mean()
 
         # Entropy loss
         entropy_bonus = entropy.mean()
@@ -246,21 +197,26 @@ class PPOAgent:
         return total_loss, policy_loss, value_loss, entropy_bonus
     
     # Returns average loss of the batch
-    def update(self, obs, acts, old_logps, returns, advantages):
+    def update(self, obs, acts, old_logps, returns, advantages, old_values=None, iteration=None):
         losses = {"total_loss": [], "policy_loss": [], "value_loss": [], "entropy_loss": []}
+        
+        # Capture parameters before optimization for change tracking
+        old_params = self.ppo_logger.capture_parameters(self.model)
       
         for epoch in range(self.settings['ppo_epochs']):
             # Get batch size based on observation type
-            batch_len = len(obs) if not isinstance(obs, dict) else len(list(obs.values())[0])
+            buffer_len = len(obs) if not isinstance(obs, dict) else len(list(obs.values())[0])
             
             # Use deterministic random state for batch sampling
             rng = np.random.RandomState(self.seed + epoch)
-            idxs = rng.permutation(batch_len)
+            idxs = rng.permutation(buffer_len)
             
             epoch_losses = {"total_loss": [], "policy_loss": [], "value_loss": [], "entropy_loss": []}
             
-            for start in range(0, batch_len, self.settings['batch_size']):
+            print(f"Batch length: {buffer_len}, {self.settings['batch_size']}")
+            for start in range(0, buffer_len, self.settings['batch_size']):
                 end = start + self.settings['batch_size']
+                print(f"Start: {start}, End: {end}")
                 mb_idx = idxs[start:end]
 
                 # Handle dictionary or tensor observations
@@ -273,18 +229,22 @@ class PPOAgent:
                 mb_old_logps = old_logps[mb_idx]
                 mb_returns = returns[mb_idx]
                 mb_advantages = advantages[mb_idx]
+                mb_old_values = old_values[mb_idx] if old_values is not None else None
 
                 # Calculate combined loss for both networks
                 total_loss, policy_loss, value_loss, entropy_bonus = self.calculate_loss(
-                    mb_obs, mb_acts, mb_old_logps, mb_returns, mb_advantages
+                    mb_obs, mb_acts, mb_old_logps, mb_returns, mb_advantages, mb_old_values
                 )
                 
                 # Update both networks with single optimizer
                 self.optimizer.zero_grad()
                 total_loss.backward()
                 
+                # Log gradients before clipping (only on first epoch and first batch for interpretability)
+                self.ppo_logger.log_gradients(self.model, iteration)
+                
                 # Add gradient clipping
-                th.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=0.5)
+                th.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=self.max_grad_norm)
                 
                 self.optimizer.step()
                 
@@ -296,22 +256,25 @@ class PPOAgent:
             # Accumulate losses
             for key in losses.keys():
                 losses[key].extend(epoch_losses[key])
+        
+        # Log parameter changes after optimization (only if iteration is provided)
+        if iteration is not None:
+            self.ppo_logger.log_parameter_changes(self.model, iteration, old_params)
 
         return losses
     
-    def train(self, env, iterations):
-        for iteration in range(iterations):
+    def train(self, env, iterations, start_iteration=0):
+        for iteration in range(start_iteration, start_iteration + iterations):
             time_start = time.time()
           
             # Reset seeds for this iteration to ensure reproducibility
-            self.reset_seed_for_iteration(iteration)
+            self.apply_seed_iteration(iteration)
             
             # Seed the environment for reproducibility
-            obs, _ = env.reset(seed=self.settings.get('seed', 0) + iteration)
+            obs, _ = env.reset(seed=self.seed + iteration)
             buffer = RolloutBuffer(self.device)
 
-            # Reset reward normalizer for new iteration
-            self.reward_normalizer.reset()
+            # Don't reset reward normalizer - let it maintain running statistics
             ep_return = 0
             ep_returns = []
             ep_steps = []
@@ -349,7 +312,7 @@ class PPOAgent:
                     ep_steps.append(ep_t)
                     ep_t = 0
                     
-                    obs, _ = env.reset(seed=self.settings.get('seed', 0) + iteration)
+                    obs, _ = env.reset(seed=self.seed + iteration)
                     if t >= self.settings['update_timesteps']:
                         break
                 t += 1
@@ -382,16 +345,15 @@ class PPOAgent:
             
             returns = th.tensor(returns, dtype=th.float32, device=self.device)
 
-            # Advantages are not normalized, because all the rewards are already
-            # normalized. Additional normalization would make policy loss too small.
-
             # Training step
             losses = self.update(
                 buffer_data['obs'], 
                 buffer_data['acts'], 
                 buffer_data['logps'], 
                 returns, 
-                advantages
+                advantages,
+                old_values=buffer_data['vals'],  # Pass old values for clipping
+                iteration=iteration
             )
             
             # Clear buffer for next iteration
@@ -411,26 +373,35 @@ class PPOAgent:
             time_end = time.time()
             time_taken = time_end - time_start
 
-            # Log metrics to TensorBoard
-            if self.logger is not None:
-                self.logger.add_scalar('Training/Mean_Return', mean_return, iteration)
-                self.logger.add_scalar('Training/Std_Return', std_return, iteration)
-                self.logger.add_scalar('Training/Mean_Steps', mean_steps, iteration)
-                self.logger.add_scalar('Training/Std_Steps', std_steps, iteration)
-                self.logger.add_scalar('Training/Time_Taken', time_taken, iteration)
-                self.logger.add_scalar('Training/Episodes', len(ep_returns), iteration)
-                
-                # Log losses
-                self.logger.add_scalar('Losses/Total_Loss', mean_losses['total_loss'], iteration)
-                self.logger.add_scalar('Losses/Policy_Loss', mean_losses['policy_loss'], iteration)
-                self.logger.add_scalar('Losses/Value_Loss', mean_losses['value_loss'], iteration)
-                self.logger.add_scalar('Losses/Entropy_Loss', mean_losses['entropy_loss'], iteration)
+            # Log weight distributions
+            self.ppo_logger.log_weight_distributions(self.model, iteration)
+            
+            # Prepare metrics for logging
+            training_metrics = {
+                'mean_return': mean_return,
+                'std_return': std_return,
+                'mean_steps': mean_steps,
+                'std_steps': std_steps,
+                'time_taken': time_taken,
+                'episodes_count': len(ep_returns)
+            }
+            
+            # Log metrics
+            self.ppo_logger.log_training_metrics(iteration, training_metrics)
+            self.ppo_logger.log_losses(iteration, mean_losses)
+            self.ppo_logger.log_learning_rates(iteration, self.optimizer)
 
-            print(f"Iteration {iteration} completed. Episodes: {len(ep_returns)} | Time taken: {time_taken:.2f}s | "
-                  f"Mean Return: {mean_return:.4f} | Std Return: {std_return:.4f} | "
-                  f"Mean steps: {mean_steps:.4f} | Std steps: {std_steps:.4f} | "
-                  f"Mean losses: total: {mean_losses['total_loss']:.6f}, policy: {mean_losses['policy_loss']:.6f}, value: {mean_losses['value_loss']:.6f}, entropy: {mean_losses['entropy_loss']:.6f}")
+            # Log current learning rates for console output
+            current_lrs = [group['lr'] for group in self.optimizer.param_groups]
+            
+            # Console logging
+            self.ppo_logger.log_console_training_summary(
+                iteration, ep_returns, time_taken, mean_return, std_return,
+                mean_steps, std_steps, mean_losses, current_lrs
+            )
+            
+            # Step the learning rate scheduler
+            self.scheduler.step()
         
-        # Close TensorBoard logger
-        if self.logger is not None:
-            self.logger.close()
+        # Close logger
+        self.ppo_logger.close()
