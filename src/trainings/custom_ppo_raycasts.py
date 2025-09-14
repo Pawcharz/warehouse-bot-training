@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-PPO Training Script for Warehouse Stage1 Complex Pos Neg 3 Environment
+PPO Training Script for Warehouse Stage1 Environments
 
 This script trains a PPO agent on the custom warehouse environment using raycast observations.
 Based on the ppo_raw.ipynb notebook structure.
@@ -15,43 +15,21 @@ from torch import multiprocessing
 import numpy as np
 import random
 import os
+import sys
+
+# Add root directory to path to find config module
+current_dir = os.path.dirname(os.path.abspath(__file__))
+root_dir = os.path.dirname(os.path.dirname(current_dir))
+if root_dir not in sys.path:
+    sys.path.insert(0, root_dir)
 
 # Environment imports
-from mlagents_envs.side_channel.engine_configuration_channel import EngineConfigurationChannel
-from mlagents_envs.environment import UnityEnvironment
-from src.environments.env_raycasts_gymnasium_wrapper import UnityRaycastsGymWrapper
+from src.environments.env_utils import make_env
 
 # Algorithm imports
 from src.algorithms.PPO_algorithm import PPOAgent
-# from src.algorithms.PPO_algorithm_returns_clipping import PPOAgent
-from src.models.actor_critic import ActorCritic, count_parameters
-
-from config import ROOT_DIR
-
-def make_env():
-    """Create and configure the Unity environment"""
-    env_path = os.path.join(ROOT_DIR, "environment_builds/stage1/S1_Find_16rays_rew0_100/Warehouse_Bot.exe")
-    
-    # Debug: print the path to verify it's correct
-    print(f"Looking for environment at: {env_path}")
-    print(f"File exists: {os.path.exists(env_path)}")
-    
-    channel = EngineConfigurationChannel()
-    
-    unity_env = UnityEnvironment(
-        file_name=env_path,
-        side_channels=[channel],
-        no_graphics=True
-    )
-    
-    # channel.set_configuration_parameters(time_scale=1)
-    
-    gymnasium_env = UnityRaycastsGymWrapper(unity_env)
-    
-    print(f"Observation space: {gymnasium_env.observation_space}")
-    print(f"Action space: {gymnasium_env.action_space}")
-    
-    return gymnasium_env
+from src.models.actor_critic import ActorCritic
+from src.models.model_utils import count_parameters, save_model_checkpoint, create_model_filename, get_default_save_dir
 
 def evaluate_policy(agent, env, num_episodes=10, seed=0):
     """Evaluate the trained policy"""
@@ -97,7 +75,7 @@ def main():
     
     # Create environment
     print("\nCreating environment...")
-    env = make_env()
+    env = make_env(time_scale=6, no_graphics=True, verbose=True, env_type="raycasts")
     
     # Get environment dimensions
     obs_dim = env.observation_space.shape[0]
@@ -132,11 +110,10 @@ def main():
         'ent_loss_coef': 0.01,
         'device': device,
         'seed': seed,
-        'use_tensorboard': True,
-        'tensorboard_log_dir': 'logs/stage1/S1_Find_16rays_rew0_100',
-        'experiment_name': f'ppo_seed_{seed}'
+        'experiment_name': f'ppo_seed_{seed}',
+        'experiment_notes': 'Stage1 Find Deliver with raycasts'
     }
-    training_iterations = 200
+    training_iterations = 800
 
     # Create model
     model_net = ActorCritic(obs_dim, act_dim)
@@ -173,25 +150,25 @@ def main():
     print(f"\n=== TRAINING RESULTS ===")
     print(f"Training iterations: {training_iterations}")
     print(f"Training time: {training_time:.2f} seconds")
-    print(f"Mean evaluation return: {mean_return:.2f} ± {std_return:.2f}")
-    print(f"Mean evaluation steps: {mean_steps:.2f} ± {std_steps:.2f}")
+    print(f"Mean evaluation return: {mean_return:.2f} +- {std_return:.2f}")
+    print(f"Mean evaluation steps: {mean_steps:.2f} +- {std_steps:.2f}")
     
     # Save model (optional)
     try:
-        save_dir = os.path.join("saved_models", "custom", "stage1")
-        os.makedirs(save_dir, exist_ok=True)
+        save_dir = get_default_save_dir("custom", "stage1")
+        filename = create_model_filename("S1_Find_Deliver_16rays_rew0_100_200_speed6x_ppo", seed)
         
-        model_path = os.path.join(save_dir, f"S1_Find_16rays_rew0_100_ppo_seed_{seed}.pth")
-        th.save({
-            'model_state_dict': agent.model.state_dict(),
-            'optimizer_state_dict': agent.optimizer.state_dict(),
-            'settings': settings,
-            'seed': seed,
-            'training_iterations': training_iterations,
-            'final_mean_return': mean_return,
-            'final_std_return': std_return
-        }, model_path)
-        print(f"Model saved to: {model_path}")
+        model_path = save_model_checkpoint(
+            model=agent.model,
+            optimizer=agent.optimizer,
+            save_dir=save_dir,
+            filename=filename,
+            settings=settings,
+            seed=seed,
+            training_iterations=training_iterations,
+            final_mean_return=mean_return,
+            final_std_return=std_return
+        )
     except Exception as e:
         print(f"Could not save model: {e}")
     
