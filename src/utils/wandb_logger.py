@@ -3,18 +3,16 @@ import wandb
 import numpy as np
 from collections import defaultdict
 
-# Try to load .env file if python-dotenv is available
+# .env file loading
 try:
     from dotenv import load_dotenv
     load_dotenv()
     print("Loaded environment variables from .env file")
 except ImportError:
-    # Still try to load from .env manually if dotenv not installed
     print(".env loading failed")
 
-
 class WandBLogger:
-    """Simple WandB logger for PPO training with minimal tabular data creation."""
+    """Simple WandB logger for PPO training."""
     
     def __init__(self, settings, seed=0):
         self.settings = settings
@@ -26,25 +24,27 @@ class WandBLogger:
         if not api_key:
             raise Exception("WANDB_API_KEY not found. Disabling WandB logging.")
         
+        project_name = settings.get('wandb_project',  os.getenv('WANDB_PROJECT'))
+        wandb_entity = settings.get('wandb_entity',  os.getenv('WANDB_ENTITY'))
+        experiment_name = settings.get('experiment_name', f'ppo_seed_{seed}')
+
         try:
             self.wandb_run = wandb.init(
-                project=settings.get('wandb_project', 'warehouse-bot-training'),
-                name=settings.get('experiment_name', f'ppo_seed_{seed}'),
-                entity=settings.get('wandb_entity', None),
+                project=project_name,
+                name=experiment_name,
+                entity=wandb_entity,
                 tags=[f"seed_{seed}", "ppo"],
                 reinit=True
             )
             print(f"WandB initialized: {self.wandb_run.name}")
         except Exception as e:
-            raise Exception(f"Failed to initialize WandB: {e}")
+            raise Exception(f"WandB failed to initialize: {e}")
     
     def log_hyperparameters(self, hyperparams):
-        """Log initial hyperparameters once at start of training (static tabular data)."""
-        if self.wandb_run is None:
-            return
+        """Log initial hyperparameters once at start of training."""
         
         wandb.config.update(hyperparams)
-        print("Hyperparameters logged to WandB config")
+        print("Hyperparameters logged")
     
     def capture_parameters(self, model):
         """Capture current model parameters for change tracking."""
@@ -55,72 +55,56 @@ class WandBLogger:
         return params
     
     def log_parameter_changes(self, model, iteration, old_params):
-        """Log aggregated parameter changes by component (time series plots)."""
-        if self.wandb_run is None:
-            return
+        """Log parameter changes for each component."""
         
         component_changes_abs_mean = defaultdict(list)
-        component_changes_l2_norm = defaultdict(list)
         
         # Collect mean average of changes for each component
         for name, param in model.named_parameters():
             if param.requires_grad and name in old_params:
                 change = param.data - old_params[name]
+
+                # Format: component.layer.weight - FIX - verify
                 component = name.split('.')[0] if '.' in name else name
                 abs_mean = change.flatten().abs().mean().item()
-                l2_norm = change.flatten().norm().item()
                 component_changes_abs_mean[component].append(abs_mean)
-                component_changes_l2_norm[component].append(l2_norm)
         
         # Log aggregated component statistics
         log_dict = {}
         for component, changes_abs_mean in component_changes_abs_mean.items():
             if changes_abs_mean:
                 log_dict[f'param_changes/abs_mean/{component}'] = np.mean(changes_abs_mean)
-        for component, changes_l2_norm in component_changes_l2_norm.items():
-            if changes_l2_norm:
-                log_dict[f'param_changes/l2_norm/{component}'] = np.mean(changes_l2_norm)
         
         if log_dict:
             wandb.log(log_dict, step=iteration)
     
     def log_gradients(self, model, iteration):
-        """Log aggregated gradient statistics by component (time series plots)."""
-        if self.wandb_run is None:
-            return
+        """Log gradient statistics by component."""
         
         component_gradients_abs_mean = defaultdict(list)
-        component_gradients_l2_norm = defaultdict(list)
         
-        # Collect gradient L2 norms for each component
+        # Collect gradient abs mean for each component
         for name, param in model.named_parameters():
             if param.requires_grad and param.grad is not None:
                 component = name.split('.')[0] if '.' in name else name
                 grad_abs_mean = param.grad.flatten().abs().mean().item()
-                grad_l2_norm = param.grad.flatten().norm().item()
                 component_gradients_abs_mean[component].append(grad_abs_mean)
-                component_gradients_l2_norm[component].append(grad_l2_norm)
         
-        # Log aggregated component statistics  
+        # Log aggregated component statistics
         log_dict = {}
         for component, gradients_abs_mean in component_gradients_abs_mean.items():
             if gradients_abs_mean:
                 log_dict[f'gradients/abs_mean/{component}'] = np.mean(gradients_abs_mean)
-        for component, gradients_l2_norm in component_gradients_l2_norm.items():
-            if gradients_l2_norm:
-                log_dict[f'gradients/l2_norm/{component}'] = np.mean(gradients_l2_norm)
         
         if log_dict:
             wandb.log(log_dict, step=iteration)
     
     def log_weight_distributions(self, model, iteration):
-        """Log aggregated weight statistics by component (time series plots)."""
-        if self.wandb_run is None:
-            return
+        """Log weight statistics by component."""
         
         component_weights_abs_mean = defaultdict(list)
         
-        # Collect weight L2 norms for each component
+        # Collect weight abs mean for each component
         for name, param in model.named_parameters():
             if param.requires_grad:
                 component = name.split('.')[0] if '.' in name else name
@@ -137,9 +121,7 @@ class WandBLogger:
             wandb.log(log_dict, step=iteration)
     
     def log_training_metrics(self, iteration, metrics):
-        """Log key training performance metrics (time series plots)."""
-        if self.wandb_run is None:
-            return
+        """Log key training performance metrics like mean and std of returns etc."""
         
         # Log only the most important metrics to minimize columns
         log_dict = defaultdict(list)
@@ -151,9 +133,7 @@ class WandBLogger:
         wandb.log(log_dict, step=iteration)
     
     def log_losses(self, iteration, losses):
-        """Log training losses (time series plots)."""
-        if self.wandb_run is None:
-            return
+        """Log training loss components."""
         
         # Log main losses only
         log_dict = defaultdict(list)
@@ -164,9 +144,7 @@ class WandBLogger:
         wandb.log(log_dict, step=iteration)
     
     def log_learning_rates(self, iteration, optimizer):
-        """Log current learning rates (time series plots)."""
-        if self.wandb_run is None:
-            return
+        """Log current learning rates for each group of parameters."""
         
         # Log current learning rates as they change
         log_dict = {}
@@ -176,8 +154,7 @@ class WandBLogger:
         
         wandb.log(log_dict, step=iteration)
     
-    def log_console_training_summary(self, iteration, ep_returns, time_taken, mean_return, std_return,
-                                     mean_steps, std_steps, mean_losses, current_lrs):
+    def log_console_training_summary(self, iteration, ep_returns, time_taken, mean_return, std_return, mean_steps, std_steps, mean_losses, current_lrs):
         """Log training summary to console."""
         print(f"\n=== Iteration {iteration} ===")
         print(f"Episodes: {len(ep_returns)}; Return: {mean_return:.2f} +- {std_return:.2f}; Steps: {mean_steps:.1f} +- {std_steps:.1f}; Time: {time_taken:.2f}s")

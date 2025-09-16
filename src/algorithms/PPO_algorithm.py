@@ -93,7 +93,7 @@ class RolloutBuffer:
 
 # PPO Agent - FIX hyperparameters logging
 class PPOAgent:
-    def __init__(self, model_net, optimizer, scheduler, settings):
+    def __init__(self, model_net, optimizer, settings, scheduler=None):
         self.settings = settings
         self.seed = settings.get('seed', 0)
         self.apply_seed(self.seed)
@@ -139,7 +139,9 @@ class PPOAgent:
           
         # Log hyperparameters (combine settings with seed)
         hyperparams = settings.copy()
-        self.ppo_logger.log_hyperparameters(hyperparams)
+
+        if self.ppo_logger is not None:
+            self.ppo_logger.log_hyperparameters(hyperparams)
 
     def apply_seed(self, seed):
         """Set seeds for all random components to ensure reproducibility"""
@@ -201,7 +203,8 @@ class PPOAgent:
         losses = {"total_loss": [], "policy_loss": [], "value_loss": [], "entropy_loss": []}
         
         # Capture parameters before optimization for change tracking
-        old_params = self.ppo_logger.capture_parameters(self.model)
+        if self.ppo_logger is not None:
+            old_params = self.ppo_logger.capture_parameters(self.model)
       
         for epoch in range(self.settings['ppo_epochs']):
             # Get batch size based on observation type
@@ -241,7 +244,8 @@ class PPOAgent:
                 total_loss.backward()
                 
                 # Log gradients before clipping (only on first epoch and first batch for interpretability)
-                self.ppo_logger.log_gradients(self.model, iteration)
+                if self.ppo_logger is not None:
+                  self.ppo_logger.log_gradients(self.model, iteration)
                 
                 # Add gradient clipping
                 th.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=self.max_grad_norm)
@@ -258,7 +262,7 @@ class PPOAgent:
                 losses[key].extend(epoch_losses[key])
         
         # Log parameter changes after optimization (only if iteration is provided)
-        if iteration is not None:
+        if iteration is not None and self.ppo_logger is not None:
             self.ppo_logger.log_parameter_changes(self.model, iteration, old_params)
 
         return losses
@@ -401,7 +405,8 @@ class PPOAgent:
             )
             
             # Step the learning rate scheduler
-            self.scheduler.step()
+            if self.scheduler is not None:
+                self.scheduler.step()
         
         # Close logger
         self.ppo_logger.close()

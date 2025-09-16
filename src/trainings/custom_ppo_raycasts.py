@@ -11,7 +11,6 @@ warnings.filterwarnings("ignore")
 
 import time
 import torch as th
-from torch import multiprocessing
 import numpy as np
 import random
 import os
@@ -65,12 +64,7 @@ def main():
     print("Starting PPO Training for Warehouse Stage1 Complex Pos Neg 3...")
     
     # Setup device
-    is_fork = multiprocessing.get_start_method() == "fork"
-    device = (
-        th.device(0)
-        if th.cuda.is_available() and not is_fork
-        else th.device("cpu")
-    )
+    device = th.device(0) if th.cuda.is_available() else th.device("cpu")
     print(f"Using device: {device}")
     
     # Create environment
@@ -144,7 +138,7 @@ def main():
     # Evaluation
     print("\nEvaluating trained policy...")
     mean_return, std_return, mean_steps, std_steps = evaluate_policy(
-        agent, env, num_episodes=10, seed=seed
+        agent.model, env, device, num_episodes=10, seed=seed
     )
     
     print(f"\n=== TRAINING RESULTS ===")

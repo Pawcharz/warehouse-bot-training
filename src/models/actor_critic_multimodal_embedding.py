@@ -150,15 +150,15 @@ class ActorCriticMultimodal(nn.Module):
         image = image / 255.0  # Image to [0, 1]
         
         # Convert to tensors and move to device
-        if not isinstance(image, th.Tensor):
-            image = th.tensor(image, device=self.device)
-        else:
+        if isinstance(image, th.Tensor):
             image = image.to(self.device)
-            
-        if not isinstance(vector, th.Tensor):
-            vector = th.tensor(vector, device=self.device)
         else:
+            image = th.tensor(image, device=self.device)
+            
+        if isinstance(vector, th.Tensor):
             vector = vector.to(self.device)
+        else:
+            vector = th.tensor(vector, device=self.device)
             
         image = image.float()
         

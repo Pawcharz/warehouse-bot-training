@@ -1,14 +1,6 @@
 #!/usr/bin/env python3
 """
 Evaluation utilities for trained policies
-
-This module provides core evaluation functions that can handle different observation types:
-- Vector observations (arrays) for simple environments
-- Multimodal observations (dictionaries) for complex environments
-
-Core functions:
-- prepare_observation(): Handles observation preprocessing for both observation types
-- evaluate_policy(): Evaluates policy performance over multiple episodes
 """
 
 import torch as th
@@ -29,16 +21,18 @@ def prepare_observation(obs, device: th.device, obs_type: str = "vector"):
     if obs_type == "multimodal":
         return obs
     elif obs_type == "vector":
-        if not isinstance(obs, th.Tensor):
-            obs_tensor = th.tensor(obs, dtype=th.float32, device=device)
-        else:
+        if isinstance(obs, th.Tensor):
             obs_tensor = obs.to(device)
+        else:
+            obs_tensor = th.tensor(obs, dtype=th.float32, device=device)
+            
+        # FIX - is it needed?
         return obs_tensor.unsqueeze(0) if obs_tensor.dim() == 1 else obs_tensor
     else:
         raise ValueError(f"Unknown observation type: {obs_type}. Use 'vector', 'multimodal', or 'auto'.")
 
 
-def evaluate_policy(agent, env, num_episodes: int = 10, seed: int = 0, 
+def evaluate_policy(model, env, device: th.device, num_episodes: int = 10, seed: int = 0, 
                    obs_type: str = "auto", verbose: bool = True) -> Tuple[float, float, float, float]:
     returns = []
     steps = []
@@ -54,10 +48,10 @@ def evaluate_policy(agent, env, num_episodes: int = 10, seed: int = 0,
         truncated = False
         
         while not (done or truncated):
-            model_obs = prepare_observation(obs, agent.device, obs_type)
+            model_obs = prepare_observation(obs, device, obs_type)
             
             with th.no_grad():
-                action, _, _, _ = agent.model.get_action(model_obs, deterministic=True)
+                action, _, _, _ = model.get_action(model_obs, deterministic=True)
             
             # Take action in the environment
             obs, reward, done, truncated, _ = env.step(action.item())

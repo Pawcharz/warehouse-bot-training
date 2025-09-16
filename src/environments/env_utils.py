@@ -15,7 +15,7 @@ Usage:
     env = make_env(time_scale=1.0, no_graphics=False, env_type="raycasts")
     
     # For camera + raycasts environment
-    env = make_env(time_scale=1.0, no_graphics=False, env_type="camera_raycasts")
+    env = make_env(time_scale=1.0, no_graphics=False, env_type="multimodal")
 """
 
 import os
@@ -34,23 +34,18 @@ if root_dir not in sys.path:
 
 from config import ROOT_DIR
 
-def make_env(env_path=None, time_scale=6, no_graphics=True, verbose=True, env_type="vector"):
+def make_env(env_path=None, time_scale=1, no_graphics=True, verbose=True, env_type="vector"):
     """
     Create and configure the Unity environment
-    
+
     Args:
-        env_path (str, optional): Path to the Unity environment executable.
-                           If None, uses the default training environment.
-        time_scale (float): Time scale for simulation (1.0 = real-time, higher = faster).
-                           Default is 6 for training speed.
-        no_graphics (bool): Whether to disable graphics rendering.
-                           Default is True for training (faster).
-        verbose (bool): Whether to print debug information.
-        env_type (str): Type of environment wrapper to use.
-                       Options: "vector", "multimodal"
+        env_path: Path to the Unity environment .exe file
+        time_scale: time scale of simulation
+        no_graphics: if graphics should be rendered
+        verbose: if True, log to console
+        env_type: type of environment to create (vector or multimodal for simple vector or camera+vector observations)
     
-    Returns:
-        UnityVectorGymWrapper or UnityMultimodalGymWrapper: Configured gymnasium environment
+    Returns: UnityVectorGymWrapper or UnityMultimodalGymWrapper
     """
     if env_path is None:
         raise ValueError("env_path must be specified. Please provide the path to the Unity environment executable.")

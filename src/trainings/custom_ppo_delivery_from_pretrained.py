@@ -4,9 +4,6 @@ PPO Delivery Training Script for Warehouse Stage2 Environments
 
 This script loads a pre-trained PPO agent and continues training on the delivery environment.
 The delivery environment includes both finding items and delivering them to specified locations.
-
-Environment: S2_Find_2Items_Deliver_64x36camera120deg_rew0_20_100_100
-Rewards: [0, 20, 100, 100] for [timeout, wrong_item, correct_item, successful_delivery]
 """
 
 import warnings
@@ -14,7 +11,6 @@ warnings.filterwarnings("ignore")
 
 import time
 import torch as th
-from torch import multiprocessing
 import numpy as np
 import random
 import os
@@ -53,12 +49,7 @@ def main():
     print("Starting PPO Delivery Training for Warehouse Stage2...")
     
     # Setup device
-    is_fork = multiprocessing.get_start_method() == "fork"
-    device = (
-        th.device(0)
-        if th.cuda.is_available() and not is_fork
-        else th.device("cpu")
-    )
+    device = th.device(0) if th.cuda.is_available() else th.device("cpu")
     print(f"Using device: {device}")
     
     # Create delivery environment
@@ -155,7 +146,7 @@ def main():
         
         # Create PPO agent with the loaded model
         print("\nCreating PPO agent for delivery training...")
-        agent = PPOAgent(model_net, optimizer, scheduler, settings)
+        agent = PPOAgent(model_net, optimizer, settings, scheduler)
         
         # Training on delivery environment
         print("\nStarting delivery training...")
@@ -171,7 +162,7 @@ def main():
         # Evaluation on delivery environment
         print("\nEvaluating delivery policy...")
         mean_return, std_return, mean_steps, std_steps = evaluate_policy(
-            agent, env, num_episodes=100, seed=seed, obs_type="multimodal"
+            agent.model, env, device, num_episodes=100, seed=seed, obs_type="multimodal"
         )
         
         print(f"\n=== DELIVERY TRAINING RESULTS ===")

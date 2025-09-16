@@ -1,7 +1,6 @@
 import numpy as np
 import gymnasium as gym
 from gymnasium import spaces
-from mlagents_envs.environment import UnityEnvironment
 from mlagents_envs.base_env import ActionTuple
 
 class UnityMultimodalGymWrapper(gym.Env):

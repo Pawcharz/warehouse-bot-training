@@ -1,16 +1,12 @@
 #!/usr/bin/env python3
 """
 Model utilities for saving and loading trained models.
-
-This module provides reusable functions for model checkpoint management
-across the warehouse bot training and inference pipeline.
 """
 
 import os
 import torch as th
 from typing import Dict, Any, Optional, Tuple
 from pathlib import Path
-
 
 def save_model_checkpoint(
     model: th.nn.Module,
@@ -55,7 +51,6 @@ def save_model_checkpoint(
     except Exception as e:
         raise Exception(f"Failed to save model checkpoint: {e}")
 
-
 def load_model_checkpoint(
     model_path: str,
     model: th.nn.Module,
@@ -98,38 +93,11 @@ def load_model_checkpoint(
     except Exception as e:
         raise Exception(f"Failed to load model checkpoint: {e}")
 
-
-def get_model_info(checkpoint_path: str) -> Dict[str, Any]:
-    if not os.path.exists(checkpoint_path):
-        raise FileNotFoundError(f"Model checkpoint not found at: {checkpoint_path}")
-    
-    try:
-        # Load only the metadata (not the model weights)
-        checkpoint = th.load(checkpoint_path, map_location='cpu', weights_only=False)
-        
-        # Extract metadata
-        metadata = {
-            'settings': checkpoint.get('settings', {}),
-            'seed': checkpoint.get('seed', None),
-            'training_iterations': checkpoint.get('training_iterations', None),
-            'final_mean_return': checkpoint.get('final_mean_return', None),
-            'final_std_return': checkpoint.get('final_std_return', None),
-            'has_optimizer_state': 'optimizer_state_dict' in checkpoint,
-            'file_size_mb': os.path.getsize(checkpoint_path) / (1024 * 1024)
-        }
-        
-        return metadata
-        
-    except Exception as e:
-        raise Exception(f"Failed to load checkpoint metadata: {e}")
-
 def create_model_filename(
     experiment_name: str,
     seed: int,
-    extension: str = ".pth"
 ) -> str:
-    return f"{experiment_name}_seed_{seed}{extension}"
-
+    return f"{experiment_name}_seed_{seed}.pth"
 
 def get_default_save_dir(experiment_type: str = "custom", stage: str = "stage1") -> str:
     return os.path.join("saved_models", experiment_type, stage)
