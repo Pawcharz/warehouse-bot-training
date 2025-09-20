@@ -25,7 +25,9 @@ if root_dir not in sys.path:
 from src.environments.env_utils import make_env
 
 # Algorithm imports
-from src.algorithms.PPO_algorithm import PPOAgent, create_optimizer_and_scheduler
+# from src.algorithms.PPO_algorithm_copy import PPOAgent, create_optimizer_and_lr_scheduler
+from src.algorithms.PPO_algorithm import PPOAgent, create_optimizer_and_lr_scheduler
+
 from src.models.actor_critic_multimodal_embedding import ActorCriticMultimodal
 from src.models.model_utils import count_parameters, save_model_checkpoint, create_model_filename, get_default_save_dir
 from src.utils.evaluation import evaluate_policy
@@ -90,6 +92,7 @@ def main():
             'ppo_epochs': 4,
             'batch_size': 128,
             'update_timesteps': 2048,
+            'buffer_size': 2048,
             'max_grad_norm': 0.5,
             'val_loss_coef': 0.5,
             'ent_loss_coef': 0.015,
@@ -98,7 +101,7 @@ def main():
             'scheduler_gamma': 0.95,
             'device': device,
             'seed': seed,
-            'experiment_name': f'ppo_camera_120deg_0_20_100_find_2_items_task_embedding_attempt_1',
+            'experiment_name': f'test_hand_ppo',
             'experiment_notes': 'ppo with 120deg camera with rewards: [0, 20, 100] with task of only finding 2 items',
         }
         training_iterations = 200
@@ -108,7 +111,7 @@ def main():
         
         # Create parameter groups and optimizer/scheduler
         param_groups = create_param_groups(model_net, visual_lr=1e-4, task_lr=1e-4, general_lr=3e-4)
-        optimizer, scheduler = create_optimizer_and_scheduler(param_groups, settings)
+        optimizer, scheduler = create_optimizer_and_lr_scheduler(param_groups, settings)
         
         # Count and display parameters
         model_params = count_parameters(model_net)
@@ -121,7 +124,7 @@ def main():
         
         # Create PPO agent
         print("\nCreating PPO agent...")
-        agent = PPOAgent(model_net, optimizer, settings, scheduler)
+        agent = PPOAgent(model_net, settings, optimizer, scheduler, 0)
         
         # Training
         print("\nStarting training...")
