@@ -27,11 +27,16 @@ from src.environments.env_utils import make_env
 from src.models.actor_critic_multimodal_embedding import ActorCriticMultimodal
 from src.models.model_utils import count_parameters, load_model_checkpoint
 from src.utils.evaluation import evaluate_policy
+from src.utils.seed_utils import set_all_seeds
 
 def main():    
     # Setup device
     device = th.device(0) if th.cuda.is_available() else th.device("cpu")
     print(f"Using device: {device}")
+    
+    # Set seed for reproducibility
+    seed = 0
+    print(f"Using seed: {seed}")
     
     # Create environment
     print("\nCreating environment...")
@@ -40,7 +45,8 @@ def main():
         no_graphics=False, 
         verbose=True,
         env_type="multimodal", 
-        env_path='environment_builds/stage3/S3_Find_2Items_Deliver_64x36camera120deg_room_big_1/Warehouse_Bot.exe'
+        env_path='environment_builds/stage3/S3_Find_2Items_Deliver_64x36camera120deg_room_big_1/Warehouse_Bot.exe',
+        seed=seed
     )
 
     try:
@@ -53,18 +59,8 @@ def main():
         print(f"Visual observation dimension: {obs_dim_visual}")
         print(f"Action dimension: {act_dim}")
         
-        # Set seed for reproducibility
-        seed = 0
-        print(f"Using seed: {seed}")
-        
         # Set seeds before loading model
-        th.manual_seed(seed)
-        np.random.seed(seed)
-        random.seed(seed)
-        th.cuda.manual_seed(seed)
-        th.cuda.manual_seed_all(seed)
-        th.backends.cudnn.deterministic = True
-        th.backends.cudnn.benchmark = False
+        set_all_seeds(seed)
         
         # Create model architecture (same as original)
         model_net = ActorCriticMultimodal(act_dim, visual_obs_size=obs_dim_visual, num_items=2, device=device)

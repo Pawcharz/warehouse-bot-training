@@ -29,6 +29,8 @@ from src.environments.env_utils import make_env
 from src.algorithms.PPO_algorithm import PPOAgent
 from src.models.actor_critic import ActorCritic
 from src.models.model_utils import count_parameters, save_model_checkpoint, create_model_filename, get_default_save_dir
+from src.utils.seed_utils import set_all_seeds
+import torch.optim as optim
 
 def evaluate_policy(agent, env, num_episodes=10, seed=0):
     """Evaluate the trained policy"""
@@ -36,7 +38,7 @@ def evaluate_policy(agent, env, num_episodes=10, seed=0):
     steps = []
     
     for episode in range(num_episodes):
-        obs, _ = env.reset(seed=seed + episode)
+        obs, _ = env.reset()
         episode_return = 0
         episode_steps = 0
         done = False
@@ -67,9 +69,13 @@ def main():
     device = th.device(0) if th.cuda.is_available() else th.device("cpu")
     print(f"Using device: {device}")
     
+    # Set seed for reproducibility
+    seed = 0
+    print(f"Using seed: {seed}")
+    
     # Create environment
     print("\nCreating environment...")
-    env = make_env(time_scale=6, no_graphics=True, verbose=True, env_type="raycasts")
+    env = make_env(time_scale=1, no_graphics=True, verbose=True, env_type="raycasts", seed=seed)
     
     # Get environment dimensions
     obs_dim = env.observation_space.shape[0]
@@ -78,18 +84,8 @@ def main():
     print(f"Observation dimension: {obs_dim}")
     print(f"Action dimension: {act_dim}")
     
-    # Set seed for reproducibility
-    seed = 0
-    print(f"Using seed: {seed}")
-    
     # Set seeds before creating model to ensure deterministic initialization
-    th.manual_seed(seed)
-    np.random.seed(seed)
-    random.seed(seed)
-    th.cuda.manual_seed(seed)
-    th.cuda.manual_seed_all(seed)
-    th.backends.cudnn.deterministic = True
-    th.backends.cudnn.benchmark = False
+    set_all_seeds(seed)
     
     # PPO settings
     settings = {
@@ -112,6 +108,10 @@ def main():
     # Create model
     model_net = ActorCritic(obs_dim, act_dim)
     
+    # Create optimizer
+    optimizer = optim.Adam(model_net.parameters(), lr=settings['lr'])
+    scheduler = None
+    
     # Count and display parameters
     model_params = count_parameters(model_net)
     print(f"\nModel parameters: {model_params}")
@@ -123,7 +123,7 @@ def main():
     
     # Create PPO agent
     print("\nCreating PPO agent...")
-    agent = PPOAgent(model_net, settings, seed=seed)
+    agent = PPOAgent(model_net, settings, optimizer, scheduler, 0)
     
     # Training
     print("\nStarting training...")

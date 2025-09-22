@@ -30,6 +30,7 @@ from src.algorithms.PPO_algorithm import PPOAgent, create_optimizer_and_lr_sched
 from src.models.actor_critic_multimodal_embedding import ActorCriticMultimodal
 from src.models.model_utils import count_parameters, save_model_checkpoint, create_model_filename, get_default_save_dir, load_model_checkpoint
 from src.utils.evaluation import evaluate_policy
+from src.utils.seed_utils import set_all_seeds
 
 def create_param_groups(model, visual_lr, task_lr, general_lr):
     
@@ -52,6 +53,10 @@ def main():
     device = th.device(0) if th.cuda.is_available() else th.device("cpu")
     print(f"Using device: {device}")
     
+    # Set seed for reproducibility
+    seed = 0
+    print(f"Using seed: {seed}")
+    
     # Create delivery environment
     print("\nCreating delivery environment...")
     env = make_env(
@@ -59,7 +64,8 @@ def main():
         no_graphics=False, 
         verbose=True, 
         env_type="multimodal", 
-        env_path='environment_builds/stage2/S2_Find_2Items_Deliver_64x36camera120deg_rew0_20_100_100/Warehouse_Bot.exe'
+        env_path='environment_builds/stage2/S2_Find_2Items_Deliver_64x36camera120deg_rew0_20_100_100/Warehouse_Bot.exe',
+        seed=seed
     )
 
     try:
@@ -73,18 +79,8 @@ def main():
         print(f"Visual observation dimension: {obs_dim_visual}")
         print(f"Action dimension: {act_dim}")
         
-        # Set seed for reproducibility
-        seed = 0
-        print(f"Using seed: {seed}")
-        
         # Set seeds before creating model
-        th.manual_seed(seed)
-        np.random.seed(seed)
-        random.seed(seed)
-        th.cuda.manual_seed(seed)
-        th.cuda.manual_seed_all(seed)
-        th.backends.cudnn.deterministic = True
-        th.backends.cudnn.benchmark = False
+        set_all_seeds(seed)
         
         # PPO settings for delivery training
         settings = {
@@ -133,7 +129,7 @@ def main():
         
         # Create parameter groups and optimizer/scheduler for delivery training
         param_groups = create_param_groups(model_net, visual_lr=1e-4, task_lr=1e-4, general_lr=3e-4)
-        optimizer, scheduler = create_optimizer_and_lr_scheduler(param_groups, settings)
+        optimizer, scheduler = create_optimizer_and_lr_scheduler(param_groups, weight_decay=1e-5, scheduler_step_size=100, scheduler_gamma=0.95)
         
         # Count and display parameters
         model_params = count_parameters(model_net)
@@ -146,7 +142,7 @@ def main():
         
         # Create PPO agent with the loaded model
         print("\nCreating PPO agent for delivery training...")
-        agent = PPOAgent(model_net, optimizer, settings, scheduler)
+        agent = PPOAgent(model_net, settings, optimizer, scheduler)
         
         # Training on delivery environment
         print("\nStarting delivery training...")

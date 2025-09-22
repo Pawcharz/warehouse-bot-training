@@ -34,7 +34,7 @@ if root_dir not in sys.path:
 
 from config import ROOT_DIR
 
-def make_env(env_path=None, time_scale=1, no_graphics=True, verbose=True, env_type="vector"):
+def make_env(env_path=None, time_scale=1, no_graphics=True, verbose=True, env_type="vector", seed=0):
     """
     Create and configure the Unity environment
 
@@ -44,6 +44,7 @@ def make_env(env_path=None, time_scale=1, no_graphics=True, verbose=True, env_ty
         no_graphics: if graphics should be rendered
         verbose: if True, log to console
         env_type: type of environment to create (vector or multimodal for simple vector or camera+vector observations)
+        seed: random seed for the Unity environment
     
     Returns: UnityVectorGymWrapper or UnityMultimodalGymWrapper
     """
@@ -53,17 +54,23 @@ def make_env(env_path=None, time_scale=1, no_graphics=True, verbose=True, env_ty
     if verbose:
         print(f"Looking for environment at: {env_path}")
         print(f"File exists: {os.path.exists(env_path)}")
+        print(f"Using Unity environment seed: {seed}")
     
     channel = EngineConfigurationChannel()
     
     unity_env = UnityEnvironment(
         file_name=env_path,
         side_channels=[channel],
-        no_graphics=no_graphics
+        no_graphics=no_graphics,
+        seed=seed
     )
     
     # Set time scale for simulation
-    channel.set_configuration_parameters(time_scale=time_scale)
+    channel.set_configuration_parameters(
+        time_scale=time_scale,
+        quality_level=0,
+        target_frame_rate=60
+    )
     
     # Choose appropriate wrapper based on env_type
     if env_type == "vector":

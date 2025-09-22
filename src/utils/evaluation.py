@@ -41,7 +41,7 @@ def evaluate_policy(model, env, device: th.device, num_episodes: int = 10, seed:
         print(f"Evaluating policy for {num_episodes} episodes...")
     
     for episode in range(num_episodes):
-        obs, _ = env.reset(seed=seed + episode)
+        obs, _ = env.reset()
         episode_return = 0
         episode_steps = 0
         done = False

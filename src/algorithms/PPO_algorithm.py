@@ -6,10 +6,10 @@ import random
 
 from src.algorithms.RewardsNormalizer import RewardNormalizer
 from src.utils.wandb_logger import WandBLogger
+from src.utils.seed_utils import set_training_iteration_seed
 
 import torch.optim as optim
 
-# FIX - rewrite
 def create_optimizer_and_lr_scheduler(param_groups, weight_decay=1e-5, scheduler_step_size=None, scheduler_gamma=None):
   
   optimizer = optim.Adam(param_groups, weight_decay=weight_decay)
@@ -151,13 +151,12 @@ class PPOAgent:
     if self.logger is not None:
       self.logger.log_hyperparameters(settings)
     
-  # Seeding function https://docs.pytorch.org/docs/stable/notes/randomness.html
+  # Seeding function https://docs.pytorch.org/docs/stable/notes/randomness.html SOURCE
   def apply_seed(self):
-    final_seed = self.seed + self.iteration
-    random.seed(final_seed)
-    np.random.seed(final_seed)
+    set_training_iteration_seed(self.seed, self.iteration)
 
-  # Inspired by https://github.com/nikhilbarhate99/PPO-PyTorch/blob/master/PPO.py ()
+
+  # Inspired by https://github.com/nikhilbarhate99/PPO-PyTorch/blob/master/PPO.py SOURCE
   def calculate_loss(self, obs, actions, old_logprobs, returns, advantages, old_values=None):
     logps, entropy, values_pred = self.model.evaluate_actions(obs, actions)
     # Clipped policy loss
@@ -200,6 +199,9 @@ class PPOAgent:
     
       Returns: losses dictionary
     """
+    # Put model into training mode
+    self.model.train()
+    
     old_params = None
     if self.logger is not None:
       old_params = self.logger.capture_parameters(self.model) # FIX - rename function
@@ -210,7 +212,7 @@ class PPOAgent:
       # List to convert from dict_values type to subscriptable
       buffer_len = len(list(obs.values())[0]) if isinstance(obs, dict) else len(obs)
       
-      rng = np.random.RandomState(self.seed + self.iteration * epoch)
+      rng = np.random.RandomState(self.seed + self.iteration * 1000 + epoch)
       indices = rng.permutation(buffer_len)
       
       # Batched update
@@ -280,13 +282,17 @@ class PPOAgent:
       
       self.apply_seed()
       
-      time_start = time.time()
+      # Reset reward normalizer at first training iteration to increase determinism
+      if i == start_iteration:
+        self.reward_normalizer.reset()
       
-      obs, _ = env.reset()
+      time_start = time.time()
       
       ep_return = 0 # returns of specific episode
       ep_returns = [] # returns through episodes
       ep_steps = [] # steps of episodes
+      
+      obs, _ = env.reset()
       
       step = 0
       steps_episode = 0
@@ -302,7 +308,10 @@ class PPOAgent:
         
         done = truncated or terminated
         # Remove batch dimention of 1 from obs to add to buffer
-        obs = {key: obs[key].squeeze(0) for key in obs.keys()}
+        if isinstance(obs, dict):
+          obs = {key: obs[key].squeeze(0) for key in obs.keys()}
+        else:
+          obs = obs.squeeze(0)
         
         buffer.add(obs, action, reward, logprob, value, done)
         obs = next_obs
@@ -310,6 +319,7 @@ class PPOAgent:
         ep_return += reward
         
         if done:
+          
           obs, _ = env.reset()
           
           ep_steps.append(steps_episode)
@@ -355,7 +365,7 @@ class PPOAgent:
       np_ep_steps = np.array(ep_steps)
       metrics = {
         'mean_return': np_ep_returns.mean(),
-        'std_returns': np_ep_returns.std(),
+        'std_return': np_ep_returns.std(),
         'mean_steps': np_ep_steps.mean(),
         'std_steps': np_ep_steps.std(),
         'time_taken': time_delta,
