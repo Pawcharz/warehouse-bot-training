@@ -18,7 +18,7 @@ os.chdir(ROOT_DIR)
 sys.path.insert(0, '.')
 
 # Import and run the inference script
-from src.inference import main
+from src.evaluation.evaluate_model import main
 
 if __name__ == "__main__":
     main() 

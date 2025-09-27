@@ -55,6 +55,51 @@ class TaskEncoder(nn.Module):
         else:
             print(f"Cannot extend task encoder. New number of items must be larger than current")
 
+class ActionEncoder(nn.Module):
+    def __init__(self, act_dim, action_embedding_dim, output_dim):
+        super().__init__()
+        
+        self.action_embedding = nn.Embedding(act_dim, action_embedding_dim)
+        self.action_embedding_dim = action_embedding_dim
+        
+        # Task encoder: processes the concatenated item embeddings
+        self.encoder = nn.Sequential(
+            nn.Linear(action_embedding_dim, 32),
+            nn.ReLU(),
+            nn.Linear(32, output_dim),
+            nn.LayerNorm(output_dim)
+        )
+
+    def forward(self, previous_action):
+        # previous_action should be a tensor with shape (batch_size, 1) or (batch_size,)
+        previous_action = previous_action.int()
+        
+        # If previous_action has shape (batch_size, 1), squeeze to (batch_size,)
+        if previous_action.dim() > 1:
+            print(f"Previous action has shape (batch_size, 1), squeezing to (batch_size,)")
+            previous_action = previous_action.squeeze(-1)
+
+        action_emb = self.action_embedding(previous_action)
+        
+        # Process through encoder network
+        encoded_action = self.encoder(action_emb)  # Shape: (batch_size, output_dim)
+        return encoded_action
+
+    def add_item(self, new_num_items):
+        if self.num_items < new_num_items:
+            new_item_embedding = nn.Embedding(new_num_items + 1, self.item_embedding_dim)
+
+            # Copy existing embeddings
+            with th.no_grad():
+                new_item_embedding[:self.num_items].weight = self.item_embedding.weight
+
+            # Replace embedding modules
+            self.item_embedding = new_item_embedding
+
+            print(f"Extended task encoder from {self.num_items} items to {new_num_items}")
+        else:
+            print(f"Cannot extend task encoder. New number of items must be larger than current")
+
 # Actor-Critic Network for multimodal observations with separate policy and value networks
 class ActorCriticMultimodal(nn.Module):
     def __init__(self, act_dim, visual_obs_size, num_items, device=None):
@@ -66,6 +111,22 @@ class ActorCriticMultimodal(nn.Module):
         # Embedding sizes for each modality
         visual_embedding_size = 64
         item_embedding_dim = 32
+        action_embedding_size = 8
+        action_output_size = 32
+
+        # Task encoder: converts item indices to embeddings and extracts features
+        self.task_encoder = TaskEncoder(
+            num_items=num_items,
+            item_embedding_dim=item_embedding_dim,
+            output_dim=visual_embedding_size
+        )
+
+        # Action encoder: converts action id to embedding
+        self.action_encoder = ActionEncoder(
+            act_dim=act_dim,
+            action_embedding_dim=action_embedding_size,
+            output_dim=action_output_size
+        )
 
         # Visual encoder: CNN for feature extraction
         self.visual_encoder_cnn = nn.Sequential(
@@ -110,15 +171,8 @@ class ActorCriticMultimodal(nn.Module):
             nn.LayerNorm(visual_embedding_size)
         )
         
-        # Task encoder: converts item indices to embeddings and extracts features
-        self.task_encoder = TaskEncoder(
-            num_items=num_items,
-            item_embedding_dim=item_embedding_dim,
-            output_dim=visual_embedding_size
-        )
-        
         # Fusion layer input size
-        fusion_size = visual_embedding_size + visual_embedding_size
+        fusion_size = visual_embedding_size + visual_embedding_size + action_output_size
 
         # Policy network
         self.policy_net = nn.Sequential(
@@ -145,6 +199,7 @@ class ActorCriticMultimodal(nn.Module):
         """Shared encoding for both policy and value networks"""
         image = observations["visual"]
         vector = observations["vector"]
+        previous_action = observations["previous_action"]
 
         # Normalize image input
         image = image / 255.0  # Image to [0, 1]
@@ -160,6 +215,11 @@ class ActorCriticMultimodal(nn.Module):
         else:
             vector = th.tensor(vector, device=self.device)
             
+        if isinstance(previous_action, th.Tensor):
+            previous_action = previous_action.to(self.device)
+        else:
+            previous_action = th.tensor(previous_action, device=self.device)
+            
         image = image.float()
         
         # Extract features from both modalities
@@ -171,8 +231,11 @@ class ActorCriticMultimodal(nn.Module):
         # Items/Tasks
         task_features = self.task_encoder(vector)
 
+        # Action
+        action_features = self.action_encoder(previous_action)
+
         # Fusion
-        fused = th.cat([image_features, task_features], dim=1)
+        fused = th.cat([image_features, task_features, action_features], dim=1)
         
         return fused
     
@@ -181,7 +244,7 @@ class ActorCriticMultimodal(nn.Module):
         return self.policy_net(combined), self.value_net(combined)
 
     def get_action(self, obs, deterministic=False):
-        """Get action from observations"""
+        """Get action for observations"""
         logits, value = self.forward(obs)
         dist = Categorical(logits=logits)
         if deterministic:

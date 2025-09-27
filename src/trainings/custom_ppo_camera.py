@@ -10,7 +10,6 @@ warnings.filterwarnings("ignore")
 
 import time
 import torch as th
-from torch import multiprocessing
 import numpy as np
 import random
 import os
@@ -26,8 +25,10 @@ if root_dir not in sys.path:
 from src.environments.env_utils import make_env
 
 # Algorithm imports
-from src.algorithms.PPO_algorithm import PPOAgent, create_optimizer_and_scheduler
-from src.models.actor_critic_multimodal_embedding import ActorCriticMultimodal
+from src.algorithms.PPO_algorithm import PPOAgent, create_optimizer_and_lr_scheduler
+
+from src.models.actor_critic_multimodal_embedding_actions import ActorCriticMultimodal
+from src.utils.seed_utils import set_all_seeds
 from src.models.model_utils import count_parameters, save_model_checkpoint, create_model_filename, get_default_save_dir
 from src.utils.evaluation import evaluate_policy
 
@@ -49,17 +50,20 @@ def main():
     print("Starting PPO Training for Warehouse Stage2...")
     
     # Setup device
-    is_fork = multiprocessing.get_start_method() == "fork"
-    device = (
-        th.device(0)
-        if th.cuda.is_available() and not is_fork
-        else th.device("cpu")
-    )
+    device = th.device(0) if th.cuda.is_available() else th.device("cpu")
+    
     print(f"Using device: {device}")
+    
+    # Set seed for reproducibility FIRST, before creating anything
+    seed = 0
+    print(f"Using seed: {seed}")
+    
+    # Set all seeds before creating model or environment
+    set_all_seeds(seed)
     
     # Create environment
     print("\nCreating environment...")
-    env = make_env(time_scale=1, no_graphics=False, verbose=True, env_type="multimodal", env_path='environment_builds/stage2/S2_Find_2Items_64x36camera120deg_rew0_100/Warehouse_Bot.exe')
+    env = make_env(time_scale=1, no_graphics=False, verbose=True, env_type="multimodal", env_path='environment_builds/stage2/S2_Find_2Items_64x36camera120deg_rew0_20_100/Warehouse_Bot.exe', seed=seed)
     # env = make_env(time_scale=3, no_graphics=True, verbose=True, env_type="multimodal", env_path='environment_builds/stage2/S2_Find_2Items_64x36camera120deg_rew0_20_100/Warehouse_Bot.exe')
 
     try:
@@ -69,22 +73,9 @@ def main():
         obs_dim_vector = env.observation_space['vector'].shape[0]
         act_dim = env.action_space.n
         
-        print(f"Observation dimension: {obs_dim_vector}")
-        print(f"Observation dimension: {obs_dim_visual}")
+        print(f"Vector observation dimension: {obs_dim_vector}")
+        print(f"Visual observation dimension: {obs_dim_visual}")
         print(f"Action dimension: {act_dim}")
-        
-        # Set seed for reproducibility
-        seed = 0
-        print(f"Using seed: {seed}")
-        
-        # Set seeds before creating model to ensure deterministic initialization
-        th.manual_seed(seed)
-        np.random.seed(seed)
-        random.seed(seed)
-        th.cuda.manual_seed(seed)
-        th.cuda.manual_seed_all(seed)
-        th.backends.cudnn.deterministic = True
-        th.backends.cudnn.benchmark = False
         
         # PPO settings
         settings = {
@@ -94,7 +85,10 @@ def main():
             'value_clip_eps': 0.2,
             'ppo_epochs': 4,
             'batch_size': 128,
-            'update_timesteps': 2048,
+            # 'update_timesteps': 2048,
+            # 'buffer_size': 2048,
+            'update_timesteps': 256,
+            'buffer_size': 256,
             'max_grad_norm': 0.5,
             'val_loss_coef': 0.5,
             'ent_loss_coef': 0.015,
@@ -103,8 +97,8 @@ def main():
             'scheduler_gamma': 0.95,
             'device': device,
             'seed': seed,
-            'experiment_name': f'ppo_camera_120deg_0_20_100_find_2_items_task_embedding_attempt_1',
-            'experiment_notes': 'ppo with 120deg camera with rewards: [0, 20, 100] with task of only finding 2 items',
+            # 'experiment_name': f'test_action_embedding',
+            # 'experiment_notes': 'ppo with 120deg camera with rewards: [0, 20, 100] with task of only finding 2 items',
         }
         training_iterations = 200
 
@@ -113,7 +107,11 @@ def main():
         
         # Create parameter groups and optimizer/scheduler
         param_groups = create_param_groups(model_net, visual_lr=1e-4, task_lr=1e-4, general_lr=3e-4)
-        optimizer, scheduler = create_optimizer_and_scheduler(param_groups, settings)
+        optimizer, scheduler = create_optimizer_and_lr_scheduler(param_groups, 1e-5, 100, 0.95)
+        
+        # Print model structure
+        print(f"\nModel Structure:")
+        print(model_net)
         
         # Count and display parameters
         model_params = count_parameters(model_net)
@@ -126,7 +124,7 @@ def main():
         
         # Create PPO agent
         print("\nCreating PPO agent...")
-        agent = PPOAgent(model_net, optimizer, scheduler, settings)
+        agent = PPOAgent(model_net, settings, optimizer, scheduler, 0)
         
         # Training
         print("\nStarting training...")
@@ -141,7 +139,7 @@ def main():
         # Evaluation
         print("\nEvaluating trained policy...")
         mean_return, std_return, mean_steps, std_steps = evaluate_policy(
-            agent, env, num_episodes=5, seed=seed, obs_type="multimodal"
+            agent.model, env, device, num_episodes=5, seed=seed, obs_type="multimodal"
         )
         
         print(f"\n=== TRAINING RESULTS ===")
@@ -151,23 +149,23 @@ def main():
         print(f"Mean evaluation steps: {mean_steps:.2f} +- {std_steps:.2f}")
         
         # Save model (optional)
-        try:
-            save_dir = get_default_save_dir("custom", "ppo_camera_120deg_0_20_100_find_2_items_task_embedding_attempt_1")
-            filename = create_model_filename("ppo_camera_120deg_0_20_100_find_2_items_task_embedding_attempt_1", seed)
+        # try:
+        #     save_dir = get_default_save_dir("custom", "ppo_camera_120deg_0_20_100_find_2_items_task_embedding_attempt_1")
+        #     filename = create_model_filename("ppo_camera_120deg_0_20_100_find_2_items_task_embedding_attempt_1", seed)
             
-            model_path = save_model_checkpoint(
-                model=agent.model,
-                optimizer=agent.optimizer,
-                save_dir=save_dir,
-                filename=filename,
-                settings=settings,
-                seed=seed,
-                training_iterations=training_iterations,
-                final_mean_return=mean_return,
-                final_std_return=std_return
-            )
-        except Exception as e:
-            print(f"Could not save model: {e}")
+        #     model_path = save_model_checkpoint(
+        #         model=agent.model,
+        #         optimizer=agent.optimizer,
+        #         save_dir=save_dir,
+        #         filename=filename,
+        #         settings=settings,
+        #         seed=seed,
+        #         training_iterations=training_iterations,
+        #         final_mean_return=mean_return,
+        #         final_std_return=std_return
+        #     )
+        # except Exception as e:
+        #     print(f"Could not save model: {e}")
     
         print("\nTraining script completed!")
 

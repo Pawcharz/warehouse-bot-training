@@ -4,9 +4,6 @@ PPO Delivery Training Script for Warehouse Stage2 Environments
 
 This script loads a pre-trained PPO agent and continues training on the delivery environment.
 The delivery environment includes both finding items and delivering them to specified locations.
-
-Environment: S2_Find_2Items_Deliver_64x36camera120deg_rew0_20_100_100
-Rewards: [0, 20, 100, 100] for [timeout, wrong_item, correct_item, successful_delivery]
 """
 
 import warnings
@@ -14,7 +11,6 @@ warnings.filterwarnings("ignore")
 
 import time
 import torch as th
-from torch import multiprocessing
 import numpy as np
 import random
 import os
@@ -30,10 +26,11 @@ if root_dir not in sys.path:
 from src.environments.env_utils import make_env
 
 # Algorithm imports
-from src.algorithms.PPO_algorithm import PPOAgent, create_optimizer_and_scheduler
+from src.algorithms.PPO_algorithm import PPOAgent, create_optimizer_and_lr_scheduler
 from src.models.actor_critic_multimodal_embedding import ActorCriticMultimodal
 from src.models.model_utils import count_parameters, save_model_checkpoint, create_model_filename, get_default_save_dir, load_model_checkpoint
 from src.utils.evaluation import evaluate_policy
+from src.utils.seed_utils import set_all_seeds
 
 def create_param_groups(model, visual_lr, task_lr, general_lr):
     
@@ -53,13 +50,12 @@ def main():
     print("Starting PPO Delivery Training for Warehouse Stage2...")
     
     # Setup device
-    is_fork = multiprocessing.get_start_method() == "fork"
-    device = (
-        th.device(0)
-        if th.cuda.is_available() and not is_fork
-        else th.device("cpu")
-    )
+    device = th.device(0) if th.cuda.is_available() else th.device("cpu")
     print(f"Using device: {device}")
+    
+    # Set seed for reproducibility
+    seed = 0
+    print(f"Using seed: {seed}")
     
     # Create delivery environment
     print("\nCreating delivery environment...")
@@ -68,7 +64,8 @@ def main():
         no_graphics=False, 
         verbose=True, 
         env_type="multimodal", 
-        env_path='environment_builds/stage2/S2_Find_2Items_Deliver_64x36camera120deg_rew0_20_100_100/Warehouse_Bot.exe'
+        env_path='environment_builds/stage2/S2_Find_2Items_Deliver_64x36camera120deg_rew0_20_100_100/Warehouse_Bot.exe',
+        seed=seed
     )
 
     try:
@@ -82,18 +79,8 @@ def main():
         print(f"Visual observation dimension: {obs_dim_visual}")
         print(f"Action dimension: {act_dim}")
         
-        # Set seed for reproducibility
-        seed = 0
-        print(f"Using seed: {seed}")
-        
         # Set seeds before creating model
-        th.manual_seed(seed)
-        np.random.seed(seed)
-        random.seed(seed)
-        th.cuda.manual_seed(seed)
-        th.cuda.manual_seed_all(seed)
-        th.backends.cudnn.deterministic = True
-        th.backends.cudnn.benchmark = False
+        set_all_seeds(seed)
         
         # PPO settings for delivery training
         settings = {
@@ -142,7 +129,7 @@ def main():
         
         # Create parameter groups and optimizer/scheduler for delivery training
         param_groups = create_param_groups(model_net, visual_lr=1e-4, task_lr=1e-4, general_lr=3e-4)
-        optimizer, scheduler = create_optimizer_and_scheduler(param_groups, settings)
+        optimizer, scheduler = create_optimizer_and_lr_scheduler(param_groups, weight_decay=1e-5, scheduler_step_size=100, scheduler_gamma=0.95)
         
         # Count and display parameters
         model_params = count_parameters(model_net)
@@ -155,7 +142,7 @@ def main():
         
         # Create PPO agent with the loaded model
         print("\nCreating PPO agent for delivery training...")
-        agent = PPOAgent(model_net, optimizer, scheduler, settings)
+        agent = PPOAgent(model_net, settings, optimizer, scheduler)
         
         # Training on delivery environment
         print("\nStarting delivery training...")
@@ -171,7 +158,7 @@ def main():
         # Evaluation on delivery environment
         print("\nEvaluating delivery policy...")
         mean_return, std_return, mean_steps, std_steps = evaluate_policy(
-            agent, env, num_episodes=100, seed=seed, obs_type="multimodal"
+            agent.model, env, device, num_episodes=100, seed=seed, obs_type="multimodal"
         )
         
         print(f"\n=== DELIVERY TRAINING RESULTS ===")
