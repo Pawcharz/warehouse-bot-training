@@ -78,7 +78,7 @@ def make_env(env_path=None, time_scale=1, no_graphics=True, verbose=True, env_ty
         gymnasium_env = UnityVectorGymWrapper(unity_env)
     elif env_type == "multimodal":
         from src.environments.env_multimodal_gymnasium_wrapper import UnityMultimodalGymWrapper
-        gymnasium_env = UnityMultimodalGymWrapper(unity_env)
+        gymnasium_env = UnityMultimodalGymWrapper(unity_env, add_previous_action=True)
     else:
         raise ValueError(f"Unknown env_type: {env_type}. Must be one of: vector, multimodal")
     

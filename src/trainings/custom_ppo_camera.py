@@ -27,7 +27,7 @@ from src.environments.env_utils import make_env
 # Algorithm imports
 from src.algorithms.PPO_algorithm import PPOAgent, create_optimizer_and_lr_scheduler
 
-from src.models.actor_critic_multimodal_embedding import ActorCriticMultimodal
+from src.models.actor_critic_multimodal_embedding_actions import ActorCriticMultimodal
 from src.utils.seed_utils import set_all_seeds
 from src.models.model_utils import count_parameters, save_model_checkpoint, create_model_filename, get_default_save_dir
 from src.utils.evaluation import evaluate_policy
@@ -73,8 +73,8 @@ def main():
         obs_dim_vector = env.observation_space['vector'].shape[0]
         act_dim = env.action_space.n
         
-        print(f"Observation dimension: {obs_dim_vector}")
-        print(f"Observation dimension: {obs_dim_visual}")
+        print(f"Vector observation dimension: {obs_dim_vector}")
+        print(f"Visual observation dimension: {obs_dim_visual}")
         print(f"Action dimension: {act_dim}")
         
         # PPO settings
@@ -97,8 +97,8 @@ def main():
             'scheduler_gamma': 0.95,
             'device': device,
             'seed': seed,
-            'experiment_name': f'test_seeding',
-            'experiment_notes': 'ppo with 120deg camera with rewards: [0, 20, 100] with task of only finding 2 items',
+            # 'experiment_name': f'test_action_embedding',
+            # 'experiment_notes': 'ppo with 120deg camera with rewards: [0, 20, 100] with task of only finding 2 items',
         }
         training_iterations = 200
 
@@ -108,6 +108,10 @@ def main():
         # Create parameter groups and optimizer/scheduler
         param_groups = create_param_groups(model_net, visual_lr=1e-4, task_lr=1e-4, general_lr=3e-4)
         optimizer, scheduler = create_optimizer_and_lr_scheduler(param_groups, 1e-5, 100, 0.95)
+        
+        # Print model structure
+        print(f"\nModel Structure:")
+        print(model_net)
         
         # Count and display parameters
         model_params = count_parameters(model_net)
@@ -145,23 +149,23 @@ def main():
         print(f"Mean evaluation steps: {mean_steps:.2f} +- {std_steps:.2f}")
         
         # Save model (optional)
-        try:
-            save_dir = get_default_save_dir("custom", "ppo_camera_120deg_0_20_100_find_2_items_task_embedding_attempt_1")
-            filename = create_model_filename("ppo_camera_120deg_0_20_100_find_2_items_task_embedding_attempt_1", seed)
+        # try:
+        #     save_dir = get_default_save_dir("custom", "ppo_camera_120deg_0_20_100_find_2_items_task_embedding_attempt_1")
+        #     filename = create_model_filename("ppo_camera_120deg_0_20_100_find_2_items_task_embedding_attempt_1", seed)
             
-            model_path = save_model_checkpoint(
-                model=agent.model,
-                optimizer=agent.optimizer,
-                save_dir=save_dir,
-                filename=filename,
-                settings=settings,
-                seed=seed,
-                training_iterations=training_iterations,
-                final_mean_return=mean_return,
-                final_std_return=std_return
-            )
-        except Exception as e:
-            print(f"Could not save model: {e}")
+        #     model_path = save_model_checkpoint(
+        #         model=agent.model,
+        #         optimizer=agent.optimizer,
+        #         save_dir=save_dir,
+        #         filename=filename,
+        #         settings=settings,
+        #         seed=seed,
+        #         training_iterations=training_iterations,
+        #         final_mean_return=mean_return,
+        #         final_std_return=std_return
+        #     )
+        # except Exception as e:
+        #     print(f"Could not save model: {e}")
     
         print("\nTraining script completed!")
 

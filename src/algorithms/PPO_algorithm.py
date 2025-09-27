@@ -79,6 +79,8 @@ class RolloutBuffer:
           result['obs'] = {}
           for obs_key in self.data['obs'][0].keys():
             result['obs'][obs_key] = th.stack([th.tensor(elem[obs_key], dtype=th.float32, device=self.device) for elem in self.data['obs']] )
+        else:
+          result[key] = th.tensor(self.data[key], dtype=th.float32, device=self.device)
       else:
         result[key] = th.tensor(self.data[key], dtype=th.float32, device=self.device)
 
@@ -296,6 +298,7 @@ class PPOAgent:
       
       step = 0
       steps_episode = 0
+
       while True:
         if isinstance(obs, dict):
           obs_tensor = {obs_key: th.tensor(obs[obs_key], dtype=th.float32, device=self.device)
@@ -307,7 +310,7 @@ class PPOAgent:
         next_obs, reward, truncated, terminated, _ = env.step(action.item())
         
         done = truncated or terminated
-        # Remove batch dimention of 1 from obs to add to buffer
+        # Remove batch dimention of 1 from observations directly returned from env to add to buffer
         if isinstance(obs, dict):
           obs = {key: obs[key].squeeze(0) for key in obs.keys()}
         else:

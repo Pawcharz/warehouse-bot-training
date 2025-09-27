@@ -15,154 +15,179 @@ class WandBLogger:
     """Simple WandB logger for PPO training."""
     
     def __init__(self, settings, seed=0):
-        self.settings = settings
-        self.seed = seed
-        self.wandb_run = None
-        
-        # Initialize WandB
-        api_key = settings.get('wandb_api_key', os.getenv('WANDB_API_KEY'))
-        if not api_key:
-            raise Exception("WANDB_API_KEY not found. Disabling WandB logging.")
-        
-        project_name = settings.get('wandb_project',  os.getenv('WANDB_PROJECT'))
-        wandb_entity = settings.get('wandb_entity',  os.getenv('WANDB_ENTITY'))
-        experiment_name = settings.get('experiment_name', None)
+      self.settings = settings
+      self.seed = seed
+      self.wandb_run = None
+      
+      # Initialize WandB
+      api_key = settings.get('wandb_api_key', os.getenv('WANDB_API_KEY'))
+      if not api_key:
+        raise Exception("WANDB_API_KEY not found. Disabling WandB logging.")
+      
+      project_name = settings.get('wandb_project',  os.getenv('WANDB_PROJECT'))
+      wandb_entity = settings.get('wandb_entity',  os.getenv('WANDB_ENTITY'))
+      experiment_name = settings.get('experiment_name', None)
 
-        if experiment_name is None:
-            raise Exception('No experiment name passed, wand logger cannot start')
+      if experiment_name is not None:
         try:
-            self.wandb_run = wandb.init(
-                project=project_name,
-                name=experiment_name,
-                entity=wandb_entity,
-                tags=[f"seed_{seed}", "ppo"],
-                reinit=True
-            )
-            print(f"WandB initialized: {self.wandb_run.name}")
+          self.wandb_run = wandb.init(
+            project=project_name,
+            name=experiment_name,
+            entity=wandb_entity,
+            tags=[f"seed_{seed}", "ppo"],
+            reinit=True
+          )
+          print(f"WandB initialized: {self.wandb_run.name}")
         except Exception as e:
-            raise Exception(f"WandB failed to initialize: {e}")
-    
+          raise Exception(f"WandB failed to initialize: {e}")
+  
     def log_hyperparameters(self, hyperparams):
-        """Log initial hyperparameters once at start of training."""
-        
+      """Log initial hyperparameters once at start of training."""
+      
+      if self.wandb_run is not None:
         self.wandb_run.config.update(hyperparams)
         print("Hyperparameters logged")
+      # else:
+      #   print("Hyperparameters not logged - WandB disabled")
     
     def capture_parameters(self, model):
-        """Capture current model parameters for change tracking."""
+      """Capture current model parameters for change tracking."""
+
+      if self.wandb_run is not None:
         params = {}
         for name, param in model.named_parameters():
-            if param.requires_grad:
-                params[name] = param.data.clone().detach()
+          if param.requires_grad:
+            params[name] = param.data.clone().detach()
         return params
+      # else:
+      #   print("Parameter capture not logged - WandB disabled")
+      #   return {}
     
     def log_parameter_changes(self, model, iteration, old_params):
-        """Log parameter changes for each component."""
-        
+      """Log parameter changes for each component."""
+
+      if self.wandb_run is not None:
         component_changes_abs_mean = defaultdict(list)
         
         # Collect mean average of changes for each component
         for name, param in model.named_parameters():
-            if param.requires_grad and name in old_params:
-                change = param.data - old_params[name]
+          if param.requires_grad and name in old_params:
+            change = param.data - old_params[name]
 
-                # Format: component.layer.weight - FIX - verify
-                component = name.split('.')[0] if '.' in name else name
-                abs_mean = change.flatten().abs().mean().item()
-                component_changes_abs_mean[component].append(abs_mean)
-        
+            # Format: component.layer.weight - FIX - verify
+            component = name.split('.')[0] if '.' in name else name
+            abs_mean = change.flatten().abs().mean().item()
+            component_changes_abs_mean[component].append(abs_mean)
+      
         # Log aggregated component statistics
         log_dict = {f'param_changes/{comp}': np.mean(abs_change) for comp, abs_change in component_changes_abs_mean.items()}
         self.wandb_run.log(log_dict, step=iteration)
+      # else:
+      #   print("Parameter changes not logged - WandB disabled")
     
     def log_gradients(self, model, iteration):
-        """Log gradient statistics by component."""
-        
+      """Log gradient statistics by component."""
+      
+      if self.wandb_run is not None:
         component_gradients_abs_mean = defaultdict(list)
         
         # Collect gradient abs mean for each component
         for name, param in model.named_parameters():
-            if param.requires_grad and param.grad is not None:
-                component = name.split('.')[0] if '.' in name else name
-                grad_abs_mean = param.grad.flatten().abs().mean().item()
-                component_gradients_abs_mean[component].append(grad_abs_mean)
+          if param.requires_grad and param.grad is not None:
+            component = name.split('.')[0] if '.' in name else name
+            grad_abs_mean = param.grad.flatten().abs().mean().item()
+            component_gradients_abs_mean[component].append(grad_abs_mean)
         
         # Log aggregated component statistics
         log_dict = {}
         for component, gradients_abs_mean in component_gradients_abs_mean.items():
-            if gradients_abs_mean:
-                log_dict[f'gradients/abs_mean/{component}'] = np.mean(gradients_abs_mean)
+          if gradients_abs_mean:
+            log_dict[f'gradients/abs_mean/{component}'] = np.mean(gradients_abs_mean)
         
         if log_dict:
-            self.wandb_run.log(log_dict, step=iteration)
-    
+          self.wandb_run.log(log_dict, step=iteration)
+      # else:
+      #   print("Gradients not logged - WandB disabled")
+  
     def log_weight_distributions(self, model, iteration):
-        """Log weight statistics by component."""
-        
+      """Log weight statistics by component."""
+      
+      if self.wandb_run is not None:
         component_weights_abs_mean = defaultdict(list)
         
         # Collect weight abs mean for each component
         for name, param in model.named_parameters():
-            if param.requires_grad:
-                component = name.split('.')[0] if '.' in name else name
-                weight_abs_mean = param.data.flatten().abs().mean().item()
-                component_weights_abs_mean[component].append(weight_abs_mean)
+          if param.requires_grad:
+            component = name.split('.')[0] if '.' in name else name
+            weight_abs_mean = param.data.flatten().abs().mean().item()
+            component_weights_abs_mean[component].append(weight_abs_mean)
         
         # Log aggregated component statistics
         log_dict = {}
         for component, weights_abs_mean in component_weights_abs_mean.items():
-            if weights_abs_mean:
-                log_dict[f'weights/abs_mean/{component}'] = np.mean(weights_abs_mean)
+          if weights_abs_mean:
+            log_dict[f'weights/abs_mean/{component}'] = np.mean(weights_abs_mean)
         
         if log_dict:
-            self.wandb_run.log(log_dict, step=iteration)
+          self.wandb_run.log(log_dict, step=iteration)
+      # else:
+      #   print("Weight distributions not logged - WandB disabled")
     
     def log_training_metrics(self, iteration, metrics):
-        """Log key training performance metrics like mean and std of returns etc."""
-        
+      """Log key training performance metrics like mean and std of returns etc."""
+      
+      if self.wandb_run is not None:
         # Log only the most important metrics to minimize columns
         log_dict = defaultdict(list)
 
         for key, value in metrics.items():
-            if value is not None:
-                log_dict[f'training/{key}'] = value
-        
+          if value is not None:
+            log_dict[f'training/{key}'] = value
+      
         self.wandb_run.log(log_dict, step=iteration)
-    
+      # else:
+        # print("Training metrics not logged - WandB disabled")
+  
     def log_losses(self, iteration, mean_losses):
-        """Log training loss components."""
-        
+      """Log training loss components."""
+      
+      if self.wandb_run is not None:
         # Log main losses only
         log_dict = defaultdict(list)
         for loss_component, value in mean_losses.items():
-            if value is not None:
-                log_dict[f'losses/{loss_component}'] = value
+          if value is not None:
+            log_dict[f'losses/{loss_component}'] = value
         
         self.wandb_run.log(log_dict, step=iteration)
-    
+      # else:
+      #   print("Losses not logged - WandB disabled")
+
     def log_learning_rates(self, iteration, optimizer):
-        """Log current learning rates for each group of parameters."""
-        
+      """Log current learning rates for each group of parameters."""
+      
+      if self.wandb_run is not None:
         # Log current learning rates as they change
         log_dict = {}
         for i, param_group in enumerate(optimizer.param_groups):
-            group_name = param_group.get('name', f'group_{i}')
-            log_dict[f'lr/{group_name}'] = param_group['lr']
+          group_name = param_group.get('name', f'group_{i}')
+          log_dict[f'lr/{group_name}'] = param_group['lr']
         
         self.wandb_run.log(log_dict, step=iteration)
-    
+      # else:
+      #   print("Learning rates not logged - WandB disabled")
+  
     def log_console_training_summary(self, iteration, ep_returns: np.ndarray, time_taken, steps: np.ndarray, losses: dict, current_lrs):
-        """Log training summary to console."""
-        
-        mean_losses = {key: np.mean(losses[key]) for key in losses}
-        
-        print(f"\n=== Iteration {iteration} ===")
-        print(f"Episodes: {len(ep_returns)}; Return: {ep_returns.mean():.2f} +- {ep_returns.std():.2f}; Steps: {steps.mean():.1f} +- {steps.std():.1f}; Time: {time_taken:.2f}s")
-        print(f"Losses: {', '.join([f'{name}: {loss:.4f}' for name, loss in mean_losses.items()])}")
-        print(f"Learning Rates: {[f'{lr:.2e}' for lr in current_lrs]}") 
+      """Log training summary to console."""
+      
+      mean_losses = {key: np.mean(losses[key]) for key in losses}
+      
+      print(f"\n=== Iteration {iteration} ===")
+      print(f"Episodes: {len(ep_returns)}; Return: {ep_returns.mean():.2f} +- {ep_returns.std():.2f}; Steps: {steps.mean():.1f} +- {steps.std():.1f}; Time: {time_taken:.2f}s")
+      print(f"Losses: {', '.join([f'{name}: {loss:.4f}' for name, loss in mean_losses.items()])}")
+      print(f"Learning Rates: {[f'{lr:.2e}' for lr in current_lrs]}") 
     
     def close(self):
-        """Close the WandB run."""
-        if self.wandb_run is not None:
-            self.wandb_run.finish()
-            print("WandB run finished") 
+      """Close the WandB run."""
+      if self.wandb_run is not None:
+        self.wandb_run.finish()
+        print("WandB run finished") 
