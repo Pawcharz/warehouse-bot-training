@@ -7,6 +7,7 @@ import random
 from src.algorithms.RewardsNormalizer import RewardNormalizer
 from src.utils.wandb_logger import WandBLogger
 from src.utils.seed_utils import set_training_iteration_seed
+from src.models.intrinsic_curiosity_module import ActorCriticWithICM
 
 import torch.optim as optim
 
@@ -62,8 +63,10 @@ class RolloutBuffer:
     self.device = device
     self.data = {
       'obs': [],
+      'next_obs': [],
       'acts': [],
       'rews': [],
+      'intrinsic_rews': [],
       'logprobs': [],
       'vals': [],
       'dones': []
@@ -74,11 +77,11 @@ class RolloutBuffer:
     # FIX - make all data fields the same type, either tensor or np.ndarray
     result = {}
     for key in self.data.keys():
-      if key == 'obs':
-        if isinstance(self.data['obs'][0], dict):
-          result['obs'] = {}
-          for obs_key in self.data['obs'][0].keys():
-            result['obs'][obs_key] = th.stack([th.tensor(elem[obs_key], dtype=th.float32, device=self.device) for elem in self.data['obs']] )
+      if key in ['obs', 'next_obs']:
+        if isinstance(self.data[key][0], dict):
+          result[key] = {}
+          for obs_key in self.data[key][0].keys():
+            result[key][obs_key] = th.stack([th.tensor(elem[obs_key], dtype=th.float32, device=self.device) for elem in self.data[key]] )
         else:
           result[key] = th.tensor(self.data[key], dtype=th.float32, device=self.device)
       else:
@@ -87,10 +90,12 @@ class RolloutBuffer:
       # print(f'{key}: {result[key]}')
     return result
   
-  def add(self, observation, action, reward, log_prob, value, done):
+  def add(self, observation, next_observation, action, reward, intrinsic_reward, log_prob, value, done):
     self.data['obs'].append(observation)
+    self.data['next_obs'].append(next_observation)
     self.data['acts'].append(action)
     self.data['rews'].append(reward)
+    self.data['intrinsic_rews'].append(intrinsic_reward)
     self.data['logprobs'].append(log_prob)
     self.data['vals'].append(value)
     self.data['dones'].append(done)
@@ -121,6 +126,8 @@ class PPOAgent:
       gamma=self.gamma,
       lambda_=settings.get('gae_lambda', 0.95)
     )
+
+    self.icm_loss_weight = settings.get('icm_loss_weight', None)
     
     # Reward normalizer
     self.reward_normalizer = RewardNormalizer(
@@ -187,7 +194,7 @@ class PPOAgent:
     
     return total, policy_loss, value_loss, entropy_loss
   
-  def update(self, obs, actions, old_logprobs, returns, advantages, old_values=None) -> dict:
+  def update(self, obs, actions, old_logprobs, returns, advantages, old_values=None, dones=None, next_obs=None) -> dict:
     """
     Performs update of model after buffer data is gathered.
     
@@ -198,6 +205,7 @@ class PPOAgent:
         returns: discounted returns from buffer
         advantages: calculated advantages
         old_values: critic's values predictions taken from buffer 'old' refers to them being used as reference even after partial update of batches
+        next_obs: next observations from buffer
     
       Returns: losses dictionary
     """
@@ -224,16 +232,24 @@ class PPOAgent:
         
         if isinstance(obs, dict):
           batch_obs = {key: obs[key][batch_indices] for key in obs.keys()}
+          batch_next_obs = {key: next_obs[key][batch_indices] for key in next_obs.keys()}
         else:
           batch_obs = obs[batch_indices]
+          batch_next_obs = next_obs[batch_indices]
         
         batch_actions = actions[batch_indices]
         batch_old_logprobs = old_logprobs[batch_indices]
         batch_returns = returns[batch_indices]
         batch_advantages = advantages[batch_indices]
         batch_old_values = old_values[batch_indices]
+        batch_dones = dones[batch_indices]
         
         total_loss, policy_loss, value_loss, entropy_loss = self.calculate_loss(batch_obs, batch_actions, batch_old_logprobs, batch_returns, batch_advantages, batch_old_values)
+        
+        if self.icm_loss_weight is not None and isinstance(self.model, ActorCriticWithICM):
+          # If model is an ActorCriticWithICM wrapper, use its compute_icm_loss
+          icm_loss, inverse_loss, forward_loss = self.model.compute_icm_loss(batch_obs, batch_next_obs, dones=batch_dones, actions=batch_actions)
+          total_loss += self.icm_loss_weight * icm_loss
         
         self.optimizer.zero_grad()
         total_loss.backward()
@@ -310,13 +326,25 @@ class PPOAgent:
         next_obs, reward, truncated, terminated, _ = env.step(action.item())
         
         done = truncated or terminated
-        # Remove batch dimention of 1 from observations directly returned from env to add to buffer
-        if isinstance(obs, dict):
-          obs = {key: obs[key].squeeze(0) for key in obs.keys()}
-        else:
-          obs = obs.squeeze(0)
         
-        buffer.add(obs, action, reward, logprob, value, done)
+        # Process observations for buffer storage
+        if isinstance(obs, dict):
+          obs_for_buffer = {key: obs[key].squeeze(0) for key in obs.keys()}
+          next_obs_for_buffer = {key: next_obs[key].squeeze(0) for key in next_obs.keys()}
+        else:
+          # Fix naming
+          obs_for_buffer = obs.squeeze(0)
+          next_obs_for_buffer = next_obs.squeeze(0)
+        
+        # Compute intrinsic reward if using ICM
+        intrinsic_reward = 0.0
+        if self.icm_loss_weight is not None and isinstance(self.model, ActorCriticWithICM):
+          intrinsic_reward = self.model.compute_curiosity_reward(obs_tensor, 
+                                                               {key: th.tensor(next_obs[key], dtype=th.float32, device=self.device) for key in next_obs.keys()} if isinstance(next_obs, dict) else th.tensor(next_obs, dtype=th.float32, device=self.device),
+                                                               action)
+          intrinsic_reward = intrinsic_reward.item()
+        
+        buffer.add(obs_for_buffer, next_obs_for_buffer, action, reward, intrinsic_reward, logprob, value, done)
         obs = next_obs
         
         ep_return += reward
@@ -338,12 +366,17 @@ class PPOAgent:
       buffer_data = buffer.get_data()
       
       rewards = buffer_data['rews'].cpu().numpy()
+      intrinsic_rewards = buffer_data['intrinsic_rews'].cpu().numpy()
+      
+      # Combine extrinsic and intrinsic rewards
+      total_rewards = rewards + intrinsic_rewards
+      
       values = buffer_data['vals']
       dones = buffer_data['dones']
       actions = buffer_data['acts']
       old_logprobs = buffer_data['logprobs']
       
-      normalized_rewards = self.reward_normalizer.normalize(rewards)
+      normalized_rewards = self.reward_normalizer.normalize(total_rewards)
       
       returns = self.compute_returns(normalized_rewards, dones)
       
@@ -351,8 +384,9 @@ class PPOAgent:
       advantages = th.tensor(advantages, dtype=th.float32, device=self.device)
       
       observations = buffer_data['obs']
+      next_observations = buffer_data['next_obs']
 
-      losses = self.update(observations, actions, old_logprobs, returns, advantages, old_values=values)
+      losses = self.update(observations, actions, old_logprobs, returns, advantages, old_values=values, dones=dones, next_obs=next_observations)
       
       # Update scheduler
       if self.scheduler is not None:
@@ -374,15 +408,18 @@ class PPOAgent:
         'time_taken': time_delta,
         'episodes_count': len(ep_returns)
       }
-      self.logger.log_training_metrics(i, metrics)
+      if self.logger is not None:
+        self.logger.log_training_metrics(i, metrics)
       
       mean_losses = {key: np.mean(losses[key]) for key in losses.keys()}
-      self.logger.log_losses(i, mean_losses)
-      self.logger.log_learning_rates(i, self.optimizer)
-      self.logger.log_weight_distributions(self.model, i)
+      if self.logger is not None:
+        self.logger.log_losses(i, mean_losses)
+        self.logger.log_learning_rates(i, self.optimizer)
+        self.logger.log_weight_distributions(self.model, i)
       
       learning_rates = [group['lr'] for group in self.optimizer.param_groups]
-      self.logger.log_console_training_summary(i, np.array(ep_returns), time_delta, np.array(ep_steps), losses, learning_rates)
+      if self.logger is not None:
+        self.logger.log_console_training_summary(i, np.array(ep_returns), time_delta, np.array(ep_steps), losses, learning_rates)
       
     if self.logger is not None:
       self.logger.close()

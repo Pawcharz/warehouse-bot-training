@@ -119,6 +119,7 @@ class ActorCriticMultimodal(nn.Module):
         
         # Fusion layer input size
         fusion_size = visual_embedding_size + visual_embedding_size
+        self.fusion_size = fusion_size
 
         # Policy network
         self.policy_net = nn.Sequential(
