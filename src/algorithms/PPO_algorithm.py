@@ -4,6 +4,7 @@ import numpy as np
 import torch as th
 import random
 
+from src.models.icm_utils import get_model_flattened_parameters
 from src.algorithms.RewardsNormalizer import RewardNormalizer
 from src.utils.wandb_logger import WandBLogger
 from src.utils.seed_utils import set_training_iteration_seed
@@ -214,7 +215,8 @@ class PPOAgent:
     
     old_params = None
     if self.logger is not None:
-      old_params = self.logger.capture_parameters(self.model) # FIX - rename function
+      named_model_params = get_model_flattened_parameters(self.model)
+      old_params = self.logger.capture_parameters(named_model_params) # FIX - rename function
     
     losses = {'total': [], 'policy': [], 'value': [], 'entropy': []}
 
@@ -266,10 +268,12 @@ class PPOAgent:
         
         # Logs only for first batch (later batches may not represent gradients correctly as parameters will already change)
         if self.logger is not None and batch_i == 0:
-          self.logger.log_gradients(self.model, iteration=self.iteration)
+          named_model_params = get_model_flattened_parameters(self.model)
+          self.logger.log_gradients(named_model_params, iteration=self.iteration)
       
     if self.logger is not None and old_params is not None:
-      self.logger.log_parameter_changes(self.model, self.iteration, old_params)
+      named_model_params = get_model_flattened_parameters(self.model)
+      self.logger.log_parameter_changes(named_model_params, self.iteration, old_params)
         
     return losses
   
@@ -307,9 +311,10 @@ class PPOAgent:
       time_start = time.time()
       
       ep_return = 0 # returns of specific episode
+      ep_intrinsic_return = 0 # intrinsic returns of specific episode
       ep_returns = [] # returns through episodes
       ep_steps = [] # steps of episodes
-      
+      ep_intrinsic_returns = [] # intrinsic returns through episodes
       obs, _ = env.reset()
       
       step = 0
@@ -348,6 +353,7 @@ class PPOAgent:
         obs = next_obs
         
         ep_return += reward
+        ep_intrinsic_return += intrinsic_reward
         
         if done:
           
@@ -355,6 +361,7 @@ class PPOAgent:
           
           ep_steps.append(steps_episode)
           ep_returns.append(ep_return)
+          ep_intrinsic_returns.append(ep_intrinsic_return)
           ep_return = 0
           steps_episode = 0
           if step >= self.buffer_size:
@@ -399,10 +406,13 @@ class PPOAgent:
       time_delta = time_end - time_start
       
       np_ep_returns = np.array(ep_returns)
+      np_ep_intrinsic_returns = np.array(ep_intrinsic_returns)
       np_ep_steps = np.array(ep_steps)
       metrics = {
         'mean_return': np_ep_returns.mean(),
+        'mean_intrinsic_return': np_ep_intrinsic_returns.mean(),
         'std_return': np_ep_returns.std(),
+        'std_intrinsic_return': np_ep_intrinsic_returns.std(),
         'mean_steps': np_ep_steps.mean(),
         'std_steps': np_ep_steps.std(),
         'time_taken': time_delta,
@@ -415,11 +425,15 @@ class PPOAgent:
       if self.logger is not None:
         self.logger.log_losses(i, mean_losses)
         self.logger.log_learning_rates(i, self.optimizer)
-        self.logger.log_weight_distributions(self.model, i)
+
+        named_model_params = get_model_flattened_parameters(self.model)
+        self.logger.log_weight_distributions(named_model_params, i)
       
       learning_rates = [group['lr'] for group in self.optimizer.param_groups]
       if self.logger is not None:
-        self.logger.log_console_training_summary(i, np.array(ep_returns), time_delta, np.array(ep_steps), losses, learning_rates)
+        print(f"Intrinsic returns length: {len(np_ep_intrinsic_returns)}")
+        print(f"Intrinsic returns: {np_ep_intrinsic_returns}")
+        self.logger.log_console_training_summary(i, np.array(ep_returns), time_delta, np.array(ep_steps), losses, learning_rates, np_ep_intrinsic_returns)
       
     if self.logger is not None:
       self.logger.close()

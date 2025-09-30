@@ -97,8 +97,8 @@ def main():
             'scheduler_gamma': 0.95,
             'device': device,
             'seed': seed,
-            # 'experiment_name': f'test_action_embedding',
-            # 'experiment_notes': 'ppo with 120deg camera with rewards: [0, 20, 100] with task of only finding 2 items',
+            'experiment_name': f'test',
+            'experiment_notes': 'ppo with 120deg camera with rewards: [0, 20, 100] with task of only finding 2 items',
         }
         training_iterations = 200
 

@@ -3,6 +3,7 @@ Example integration of ICM with the existing PPO training loop.
 This shows how to modify the training to include curiosity-driven exploration.
 """
 
+from src.models.intrinsic_curiosity_module import ActorCriticWithICM
 import torch as th
 
 def compute_intrinsic_rewards(model_with_icm, obs_buffer, next_obs_buffer, actions_buffer):
@@ -36,3 +37,20 @@ def compute_intrinsic_rewards(model_with_icm, obs_buffer, next_obs_buffer, actio
         intrinsic_rewards.append(batch_intrinsic_rewards)
     
     return th.cat(intrinsic_rewards, dim=0)
+
+def get_model_flattened_parameters(icm_model):
+    """
+    Get the named parameters of the ICM model as concatenation of icm and actor_critic parameters.
+    The icm and actor_critic parametess are separated by a '/' in the name.
+    """
+    if isinstance(icm_model, ActorCriticWithICM):
+        model_params = []
+        
+        for name, param in icm_model.icm.named_parameters():
+            model_params.append((f'icm/{name}', param))
+            
+        for name, param in icm_model.actor_critic.named_parameters():
+            model_params.append((f'actor_critic/{name}', param))
+        return model_params
+    else:
+        return icm_model.named_parameters()

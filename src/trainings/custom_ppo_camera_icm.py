@@ -93,8 +93,8 @@ def main():
             'batch_size': 128,
             'update_timesteps': 2048,
             'buffer_size': 2048,
-            # 'update_timesteps': 256,
-            # 'buffer_size': 256,
+            # 'update_timesteps': 128,
+            # 'buffer_size': 128,
             'max_grad_norm': 0.5,
             'val_loss_coef': 0.5,
             'icm_loss_weight': 0.1,
@@ -111,7 +111,7 @@ def main():
 
         # Create model
         model_net = ActorCriticMultimodal(act_dim, visual_obs_size=obs_dim_visual, num_items=2, device=device)
-        icm = IntrinsicCuriosityModule(feature_dim=model_net.fusion_size, action_dim=act_dim, device=device)
+        icm = IntrinsicCuriosityModule(feature_dim=model_net.fusion_size, action_dim=act_dim, eta=0.01, beta=0.2, device=device)
         model = ActorCriticWithICM(model_net, icm)
         # Create parameter groups and optimizer/scheduler
         param_groups = create_param_groups(model_net, visual_lr=1e-4, task_lr=1e-4, general_lr=3e-4, icm=icm, icm_lr=1e-4)

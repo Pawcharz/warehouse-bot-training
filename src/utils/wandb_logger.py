@@ -47,54 +47,54 @@ class WandBLogger:
       if self.wandb_run is not None:
         self.wandb_run.config.update(hyperparams)
         print("Hyperparameters logged")
-      # else:
-      #   print("Hyperparameters not logged - WandB disabled")
     
-    def capture_parameters(self, model):
+    def _extract_component_name(self, param_name):
+      """
+      Extracts component name from named parameters. Assumes that layers are separated by a '.' in the name
+      and components which names should be logged are separated by a '/'.
+      """
+      parts = param_name.split('.')
+      return parts[0]
+
+    def capture_parameters(self, named_model_params):
       """Capture current model parameters for change tracking."""
 
       if self.wandb_run is not None:
         params = {}
-        for name, param in model.named_parameters():
+        for name, param in named_model_params:
           if param.requires_grad:
             params[name] = param.data.clone().detach()
         return params
-      # else:
-      #   print("Parameter capture not logged - WandB disabled")
-      #   return {}
     
-    def log_parameter_changes(self, model, iteration, old_params):
+    def log_parameter_changes(self, named_model_params, iteration, old_params):
       """Log parameter changes for each component."""
 
       if self.wandb_run is not None:
         component_changes_abs_mean = defaultdict(list)
         
         # Collect mean average of changes for each component
-        for name, param in model.named_parameters():
+        for name, param in named_model_params:
           if param.requires_grad and name in old_params:
             change = param.data - old_params[name]
 
-            # Format: component.layer.weight - FIX - verify
-            component = name.split('.')[0] if '.' in name else name
+            component = self._extract_component_name(name)
             abs_mean = change.flatten().abs().mean().item()
             component_changes_abs_mean[component].append(abs_mean)
       
         # Log aggregated component statistics
         log_dict = {f'param_changes/{comp}': np.mean(abs_change) for comp, abs_change in component_changes_abs_mean.items()}
         self.wandb_run.log(log_dict, step=iteration)
-      # else:
-      #   print("Parameter changes not logged - WandB disabled")
     
-    def log_gradients(self, model, iteration):
+    def log_gradients(self, named_model_params, iteration):
       """Log gradient statistics by component."""
       
       if self.wandb_run is not None:
         component_gradients_abs_mean = defaultdict(list)
         
         # Collect gradient abs mean for each component
-        for name, param in model.named_parameters():
+        for name, param in named_model_params:
           if param.requires_grad and param.grad is not None:
-            component = name.split('.')[0] if '.' in name else name
+            component = self._extract_component_name(name)
             grad_abs_mean = param.grad.flatten().abs().mean().item()
             component_gradients_abs_mean[component].append(grad_abs_mean)
         
@@ -106,20 +106,18 @@ class WandBLogger:
         
         if log_dict:
           self.wandb_run.log(log_dict, step=iteration)
-      # else:
-      #   print("Gradients not logged - WandB disabled")
   
-    def log_weight_distributions(self, model, iteration):
+    def log_weight_distributions(self, named_model_params, iteration):
       """Log weight statistics by component."""
       
       if self.wandb_run is not None:
         component_weights_abs_mean = defaultdict(list)
         
         # Collect weight abs mean for each component
-        for name, param in model.named_parameters():
+        for name, param in named_model_params:
           if param.requires_grad:
-            component = name.split('.')[0] if '.' in name else name
-            weight_abs_mean = param.data.flatten().abs().mean().item()
+            component = self._extract_component_name(name)
+            weight_abs_mean = param.flatten().abs().mean().item()
             component_weights_abs_mean[component].append(weight_abs_mean)
         
         # Log aggregated component statistics
@@ -130,8 +128,6 @@ class WandBLogger:
         
         if log_dict:
           self.wandb_run.log(log_dict, step=iteration)
-      # else:
-      #   print("Weight distributions not logged - WandB disabled")
     
     def log_training_metrics(self, iteration, metrics):
       """Log key training performance metrics like mean and std of returns etc."""
@@ -145,8 +141,6 @@ class WandBLogger:
             log_dict[f'training/{key}'] = value
       
         self.wandb_run.log(log_dict, step=iteration)
-      # else:
-        # print("Training metrics not logged - WandB disabled")
   
     def log_losses(self, iteration, mean_losses):
       """Log training loss components."""
@@ -159,8 +153,6 @@ class WandBLogger:
             log_dict[f'losses/{loss_component}'] = value
         
         self.wandb_run.log(log_dict, step=iteration)
-      # else:
-      #   print("Losses not logged - WandB disabled")
 
     def log_learning_rates(self, iteration, optimizer):
       """Log current learning rates for each group of parameters."""
@@ -173,16 +165,16 @@ class WandBLogger:
           log_dict[f'lr/{group_name}'] = param_group['lr']
         
         self.wandb_run.log(log_dict, step=iteration)
-      # else:
-      #   print("Learning rates not logged - WandB disabled")
   
-    def log_console_training_summary(self, iteration, ep_returns: np.ndarray, time_taken, steps: np.ndarray, losses: dict, current_lrs):
+    def log_console_training_summary(self, iteration, ep_returns: np.ndarray, time_taken, steps: np.ndarray, losses: dict, current_lrs, intrinsic_returns: np.ndarray = None):
       """Log training summary to console."""
       
       mean_losses = {key: np.mean(losses[key]) for key in losses}
       
       print(f"\n=== Iteration {iteration} ===")
       print(f"Episodes: {len(ep_returns)}; Return: {ep_returns.mean():.2f} +- {ep_returns.std():.2f}; Steps: {steps.mean():.1f} +- {steps.std():.1f}; Time: {time_taken:.2f}s")
+      if intrinsic_returns is not None:
+        print(f"Intrinsic Returns: {intrinsic_returns.mean():.2f} +- {intrinsic_returns.std():.2f}")
       print(f"Losses: {', '.join([f'{name}: {loss:.4f}' for name, loss in mean_losses.items()])}")
       print(f"Learning Rates: {[f'{lr:.2e}' for lr in current_lrs]}") 
     
