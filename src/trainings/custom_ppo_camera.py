@@ -27,7 +27,7 @@ from src.environments.env_utils import make_env
 # Algorithm imports
 from src.algorithms.PPO_algorithm import PPOAgent, create_optimizer_and_lr_scheduler
 
-from src.models.actor_critic_multimodal_embedding_actions import ActorCriticMultimodal
+from src.models.actor_critic_multimodal_embedding import ActorCriticMultimodal
 from src.utils.seed_utils import set_all_seeds
 from src.models.model_utils import count_parameters, save_model_checkpoint, create_model_filename, get_default_save_dir
 from src.utils.evaluation import evaluate_policy
@@ -63,8 +63,7 @@ def main():
     
     # Create environment
     print("\nCreating environment...")
-    env = make_env(time_scale=1, no_graphics=False, verbose=True, env_type="multimodal", env_path='environment_builds/stage2/S2_Find_2Items_64x36camera120deg_rew0_20_100/Warehouse_Bot.exe', seed=seed)
-    # env = make_env(time_scale=3, no_graphics=True, verbose=True, env_type="multimodal", env_path='environment_builds/stage2/S2_Find_2Items_64x36camera120deg_rew0_20_100/Warehouse_Bot.exe')
+    env = make_env(time_scale=1, no_graphics=False, verbose=True, env_type="multimodal", env_path='environment_builds/stage3/S3_Find_2Items_64x36camera120deg_textured_small/Warehouse_Bot.exe', seed=seed)
 
     try:
         print(env.observation_space)
@@ -85,10 +84,7 @@ def main():
             'value_clip_eps': 0.2,
             'ppo_epochs': 4,
             'batch_size': 128,
-            # 'update_timesteps': 2048,
-            # 'buffer_size': 2048,
-            'update_timesteps': 256,
-            'buffer_size': 256,
+            'buffer_size': 2048,
             'max_grad_norm': 0.5,
             'val_loss_coef': 0.5,
             'ent_loss_coef': 0.015,
@@ -97,8 +93,8 @@ def main():
             'scheduler_gamma': 0.95,
             'device': device,
             'seed': seed,
-            'experiment_name': f'test',
-            'experiment_notes': 'ppo with 120deg camera with rewards: [0, 20, 100] with task of only finding 2 items',
+            'experiment_name': f'test_small_env_with_textures',
+            'experiment_notes': 'ppo with 120deg camera with rewards: [0, 20, 100] with task of only finding 2 items. Original size environment with textures and obstacles on the sides.',
         }
         training_iterations = 200
 
@@ -149,23 +145,23 @@ def main():
         print(f"Mean evaluation steps: {mean_steps:.2f} +- {std_steps:.2f}")
         
         # Save model (optional)
-        # try:
-        #     save_dir = get_default_save_dir("custom", "ppo_camera_120deg_0_20_100_find_2_items_task_embedding_attempt_1")
-        #     filename = create_model_filename("ppo_camera_120deg_0_20_100_find_2_items_task_embedding_attempt_1", seed)
+        try:
+            save_dir = get_default_save_dir("custom", "ppo_camera_120deg_0_20_100_find_2_items_small_env_with_textures_no_icm")
+            filename = create_model_filename("ppo_camera_120deg_0_20_100_find_2_items_small_env_with_textures_no_icm", seed)
             
-        #     model_path = save_model_checkpoint(
-        #         model=agent.model,
-        #         optimizer=agent.optimizer,
-        #         save_dir=save_dir,
-        #         filename=filename,
-        #         settings=settings,
-        #         seed=seed,
-        #         training_iterations=training_iterations,
-        #         final_mean_return=mean_return,
-        #         final_std_return=std_return
-        #     )
-        # except Exception as e:
-        #     print(f"Could not save model: {e}")
+            model_path = save_model_checkpoint(
+                model=agent.model,
+                optimizer=agent.optimizer,
+                save_dir=save_dir,
+                filename=filename,
+                settings=settings,
+                seed=seed,
+                training_iterations=training_iterations,
+                final_mean_return=mean_return,
+                final_std_return=std_return
+            )
+        except Exception as e:
+            print(f"Could not save model: {e}")
     
         print("\nTraining script completed!")
 

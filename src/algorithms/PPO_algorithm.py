@@ -219,9 +219,13 @@ class PPOAgent:
       old_params = self.logger.capture_parameters(named_model_params) # FIX - rename function
     
     losses = {'total': [], 'policy': [], 'value': [], 'entropy': []}
+    if self.icm_loss_weight is not None and isinstance(self.model, ActorCriticWithICM):
+      losses['inverse_loss'] = []
+      losses['forward_loss'] = []
+      losses['icm_loss'] = []
 
     for epoch in range(self.epochs):
-      # List to convert from dict_values type to subscriptable
+      
       buffer_len = len(list(obs.values())[0]) if isinstance(obs, dict) else len(obs)
       
       rng = np.random.RandomState(self.seed + self.iteration * 1000 + epoch)
@@ -248,10 +252,18 @@ class PPOAgent:
         
         total_loss, policy_loss, value_loss, entropy_loss = self.calculate_loss(batch_obs, batch_actions, batch_old_logprobs, batch_returns, batch_advantages, batch_old_values)
         
+        icm_loss = 0.0
+        inverse_loss = 0.0
+        forward_loss = 0.0
+        
+        # Compute ICM loss if using ICM
         if self.icm_loss_weight is not None and isinstance(self.model, ActorCriticWithICM):
           # If model is an ActorCriticWithICM wrapper, use its compute_icm_loss
           icm_loss, inverse_loss, forward_loss = self.model.compute_icm_loss(batch_obs, batch_next_obs, dones=batch_dones, actions=batch_actions)
           total_loss += self.icm_loss_weight * icm_loss
+          inverse_loss *= self.icm_loss_weight
+          forward_loss *= self.icm_loss_weight
+          # print(f"inverse_loss: {inverse_loss.item()}, forward_loss: {forward_loss.item()}, icm_loss: {icm_loss.item()}")
         
         self.optimizer.zero_grad()
         total_loss.backward()
@@ -265,6 +277,10 @@ class PPOAgent:
         losses['policy'].append(policy_loss.item())
         losses['value'].append(value_loss.item())
         losses['entropy'].append(entropy_loss.item())
+        if self.icm_loss_weight is not None and isinstance(self.model, ActorCriticWithICM):
+          losses['inverse_loss'].append(inverse_loss.item())
+          losses['forward_loss'].append(forward_loss.item())
+          losses['icm_loss'].append(icm_loss.item() * self.icm_loss_weight)
         
         # Logs only for first batch (later batches may not represent gradients correctly as parameters will already change)
         if self.logger is not None and batch_i == 0:
@@ -431,8 +447,6 @@ class PPOAgent:
       
       learning_rates = [group['lr'] for group in self.optimizer.param_groups]
       if self.logger is not None:
-        print(f"Intrinsic returns length: {len(np_ep_intrinsic_returns)}")
-        print(f"Intrinsic returns: {np_ep_intrinsic_returns}")
         self.logger.log_console_training_summary(i, np.array(ep_returns), time_delta, np.array(ep_steps), losses, learning_rates, np_ep_intrinsic_returns)
       
     if self.logger is not None:

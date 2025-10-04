@@ -27,18 +27,18 @@ class IntrinsicCuriosityModule(nn.Module):
     
     # Inverse model: predicts action from state features
     self.inverse_model = nn.Sequential(
-      nn.Linear(feature_dim * 2, 256),  # concat current and next features
+      nn.Linear(feature_dim * 2, 128),  # concat current and next features
       nn.ReLU(),
-      nn.Linear(256, 128),
+      nn.Linear(128, 128),
       nn.ReLU(),
       nn.Linear(128, action_dim)
     )
     
     # Forward model: predicts next state features from current features + action
     self.forward_model = nn.Sequential(
-      nn.Linear(feature_dim + action_dim, 256),  # features + one-hot action
+      nn.Linear(feature_dim + action_dim, 128),  # features + one-hot action
       nn.ReLU(),
-      nn.Linear(256, 128),
+      nn.Linear(128, 128),
       nn.ReLU(),
       nn.Linear(128, feature_dim)
     )
@@ -46,9 +46,13 @@ class IntrinsicCuriosityModule(nn.Module):
     if device is not None:
       self.to(device)
   
-  def get_features(self, actor_critic_model, observations):
+  def get_features(self, actor_critic_model, observations, no_grad=False):
     """Extract features using the actor-critic model's shared encoding"""
-    with th.no_grad():
+
+    if no_grad:
+      with th.no_grad():
+        features = actor_critic_model._encode_observations(observations)
+    else:
       features = actor_critic_model._encode_observations(observations)
     return features
   
@@ -57,16 +61,15 @@ class IntrinsicCuriosityModule(nn.Module):
     Forward pass through ICM
     
     Args:
-        current_features: Features from current state
-        next_features: Features from next state  
-        actions: Actions taken (as indices)
-        
+      current_features: Features from current state
+      next_features: Features from next state
+      actions: Actions taken (as indices)
+    
     Returns:
-        inverse_loss: Loss from inverse model
-        forward_loss: Loss from forward model
-        intrinsic_reward: Curiosity-driven reward
+      inverse_loss: Loss from inverse model
+      forward_loss: Loss from forward model
+      intrinsic_reward: Curiosity-driven reward
     """
-    batch_size = current_features.shape[0]
     
     # Convert actions to one-hot encoding
     actions_onehot = F.one_hot(actions.long(), num_classes=self.inverse_model[-1].out_features).float()
@@ -84,6 +87,7 @@ class IntrinsicCuriosityModule(nn.Module):
     # Intrinsic reward is the prediction error (curiosity)
     intrinsic_reward = self.eta * forward_loss.detach()
     
+    # print(f"Inverse loss: {inverse_loss.item()}, Forward loss: {forward_loss.item()}, Intrinsic reward: {intrinsic_reward.item()}")
     return inverse_loss, forward_loss, intrinsic_reward
   
   def compute_icm_loss(self, current_features, next_features, actions):
@@ -123,8 +127,8 @@ class ActorCriticWithICM(nn.Module):
   
   def compute_curiosity_reward(self, current_obs, next_obs, actions):
     """Compute intrinsic curiosity reward"""
-    current_features = self.icm.get_features(self.actor_critic, current_obs)
-    next_features = self.icm.get_features(self.actor_critic, next_obs)
+    current_features = self.icm.get_features(self.actor_critic, current_obs, no_grad=True)
+    next_features = self.icm.get_features(self.actor_critic, next_obs, no_grad=True)
     
     intrinsic_reward = self.icm.compute_intrinsic_reward(
       current_features, next_features, actions
@@ -169,4 +173,7 @@ class ActorCriticWithICM(nn.Module):
     current_features = self.icm.get_features(self.actor_critic, proper_obs)
     next_features = self.icm.get_features(self.actor_critic, proper_next_obs)
 
+    dist = np.linalg.norm(current_features - next_features)   
+    print(f"L2 distance between features (encoded): {dist}")
+    
     return self.icm.compute_icm_loss(current_features, next_features, proper_actions) 
