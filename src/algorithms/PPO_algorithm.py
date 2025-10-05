@@ -7,7 +7,7 @@ import random
 from src.models.icm_utils import get_model_flattened_parameters
 from src.algorithms.RewardsNormalizer import RewardNormalizer
 from src.utils.wandb_logger import WandBLogger
-from src.utils.seed_utils import set_training_iteration_seed
+from src.utils.seed_utils import set_all_seeds
 from src.models.intrinsic_curiosity_module import ActorCriticWithICM
 
 import torch.optim as optim
@@ -123,6 +123,7 @@ class PPOAgent:
     self.scheduler = scheduler
     
     self.gamma = settings.get('gamma', 0.99)
+    self.icm_normalizer_gamma = settings.get('icm_normalizer_gamma', self.gamma)
     self.gae = GAE(
       gamma=self.gamma,
       lambda_=settings.get('gae_lambda', 0.95)
@@ -130,11 +131,18 @@ class PPOAgent:
 
     self.icm_loss_weight = settings.get('icm_loss_weight', None)
     
-    # Reward normalizer
-    self.reward_normalizer = RewardNormalizer(
+    # Reward normalizers
+    self.extrinsic_normalizer = RewardNormalizer(
       gamma=self.gamma,
       epsilon=settings.get('reward_norm_epsilon', 1e-8)
     )
+    self.intrinsic_normalizer = RewardNormalizer(
+      gamma=self.icm_normalizer_gamma,
+      epsilon=settings.get('reward_norm_epsilon', 1e-8)
+    )
+    
+    # Scaling for intrinsic reward
+    self.intrinsic_reward_scale = settings.get('intrinsic_reward_scale', 1.0)
     
     # PPO algorithm settings
     self.clip_eps = settings.get('clip_eps', 0.2)
@@ -163,7 +171,7 @@ class PPOAgent:
     
   # Seeding function https://docs.pytorch.org/docs/stable/notes/randomness.html SOURCE
   def apply_seed(self):
-    set_training_iteration_seed(self.seed, self.iteration)
+    set_all_seeds(self.seed)
 
 
   # Inspired by https://github.com/nikhilbarhate99/PPO-PyTorch/blob/master/PPO.py SOURCE
@@ -318,11 +326,12 @@ class PPOAgent:
     for i in range(start_iteration, start_iteration + iterations):
       self.iteration = i
       
-      self.apply_seed()
+      # self.apply_seed()
       
       # Reset reward normalizer at first training iteration to increase determinism
       if i == start_iteration:
-        self.reward_normalizer.reset()
+        self.extrinsic_normalizer.reset()
+        self.intrinsic_normalizer.reset()
       
       time_start = time.time()
       
@@ -331,7 +340,7 @@ class PPOAgent:
       ep_returns = [] # returns through episodes
       ep_steps = [] # steps of episodes
       ep_intrinsic_returns = [] # intrinsic returns through episodes
-      obs, _ = env.reset()
+      obs, _ = env.reset(self.seed)
       
       step = 0
       steps_episode = 0
@@ -373,7 +382,7 @@ class PPOAgent:
         
         if done:
           
-          obs, _ = env.reset()
+          obs, _ = env.reset(self.seed)
           
           ep_steps.append(steps_episode)
           ep_returns.append(ep_return)
@@ -388,19 +397,22 @@ class PPOAgent:
     
       buffer_data = buffer.get_data()
       
-      rewards = buffer_data['rews'].cpu().numpy()
-      intrinsic_rewards = buffer_data['intrinsic_rews'].cpu().numpy()
-      
-      # Combine extrinsic and intrinsic rewards
-      total_rewards = rewards + intrinsic_rewards
+      np_rewards = buffer_data['rews'].cpu().numpy()
+      np_intrinsic_rewards = buffer_data['intrinsic_rews'].cpu().numpy()
       
       values = buffer_data['vals']
       dones = buffer_data['dones']
       actions = buffer_data['acts']
       old_logprobs = buffer_data['logprobs']
       
-      normalized_rewards = self.reward_normalizer.normalize(total_rewards)
-      
+      norm_extrinsic = self.extrinsic_normalizer.normalize(np_rewards)
+      norm_intrinsic = self.intrinsic_normalizer.normalize(np_intrinsic_rewards)
+
+      print(f"Mean rewards: norm_extrinsic: {norm_extrinsic.mean()}, norm_intrinsic: {norm_intrinsic.mean()}; Ratio (ext/int): {norm_extrinsic.mean() / norm_intrinsic.mean()}")
+
+      # Scale intrinsic before combining
+      normalized_rewards = norm_extrinsic + self.intrinsic_reward_scale * norm_intrinsic
+
       returns = self.compute_returns(normalized_rewards, dones)
       
       advantages = self.gae.compute_gae(normalized_rewards, values, dones)

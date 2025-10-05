@@ -69,8 +69,7 @@ def main():
     
     # Create environment
     print("\nCreating environment...")
-    # env = make_env(time_scale=1, no_graphics=True, verbose=True, env_type="multimodal", env_path='environment_builds/stage3/S3_Find_2Items_64x36camera120deg_complex3_textured/Warehouse_Bot.exe', seed=seed)
-    env = make_env(time_scale=1, no_graphics=False, verbose=True, env_type="multimodal", env_path='environment_builds/stage3/S3_Find_2Items_64x36camera120deg_complex3_textured/Warehouse_Bot.exe', seed=seed)
+    env = make_env(time_scale=1, no_graphics=False, verbose=True, env_type="multimodal", env_path='environment_builds/stage3/S3_Find_2Items_64x36camera120deg_obstacles_1_stackedObs_x5/Warehouse_Bot.exe', seed=seed)
 
     try:
         print(env.observation_space)
@@ -95,15 +94,17 @@ def main():
             'max_grad_norm': 0.5,
             'val_loss_coef': 0.5,
             'icm_loss_weight': 0.1,
-            'ent_loss_coef': 0.005,
+            'ent_loss_coef': 0.01,
             'icm_eta': 0.01,
             'icm_beta': 0.6,
+            'icm_normalizer_gamma': 0.995,
+            'intrinsic_reward_scale': 0.05,
             'weight_decay': 1e-5,
             'scheduler_step_size': 100,
             'scheduler_gamma': 0.95,
             'device': device,
             'seed': seed,
-            'experiment_name': f'icm_module_performance_test_complex_env_debug',
+            'experiment_name': f'icm_module_test_small_env_with_textures_stackedObs_x5',
             'experiment_notes': 'ppo with 120deg camera with rewards: [0, 20, 100] with task of only finding 2 items and ICM module on environment with more complex textures and obstacles',
         }
         training_iterations = 200
@@ -113,7 +114,6 @@ def main():
         icm_eta = settings['icm_eta']
         icm_beta = settings['icm_beta']
         icm = IntrinsicCuriosityModule(feature_dim=model_net.fusion_size, action_dim=act_dim, eta=icm_eta, beta=icm_beta, device=device)
-        print(f"ICM: eta: {icm_eta}, beta: {icm_beta}")
         
         model = ActorCriticWithICM(model_net, icm)
         # Create parameter groups and optimizer/scheduler
@@ -140,6 +140,7 @@ def main():
         print(f"\nPPO Settings:")
         for key, value in settings.items():
             print(f"  {key}: {value}")
+        print(f"ICM: eta: {icm_eta}, beta: {icm_beta}")
         
         # Create PPO agent
         print("\nCreating PPO agent...")
@@ -169,8 +170,8 @@ def main():
         
         # Save model (optional)
         try:
-            save_dir = get_default_save_dir("custom", "icm_module_performance_test_complex_env_02_10_2025")
-            filename = create_model_filename("icm_module_performance_test_complex_env_02_10_2025", seed)
+            save_dir = get_default_save_dir("custom", "icm_module_performance_test_complex_env_02_10_2025_stackedObs_x5")
+            filename = create_model_filename("icm_module_performance_test_complex_env_02_10_2025_stackedObs_x5", seed)
             
             model_path = save_model_checkpoint(
                 model=agent.model,

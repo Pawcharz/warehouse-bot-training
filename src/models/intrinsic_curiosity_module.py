@@ -29,18 +29,18 @@ class IntrinsicCuriosityModule(nn.Module):
     self.inverse_model = nn.Sequential(
       nn.Linear(feature_dim * 2, 128),  # concat current and next features
       nn.ReLU(),
-      nn.Linear(128, 128),
+      nn.Linear(128, 64),
       nn.ReLU(),
-      nn.Linear(128, action_dim)
+      nn.Linear(64, action_dim)
     )
     
     # Forward model: predicts next state features from current features + action
     self.forward_model = nn.Sequential(
       nn.Linear(feature_dim + action_dim, 128),  # features + one-hot action
       nn.ReLU(),
-      nn.Linear(128, 128),
+      nn.Linear(128, 64),
       nn.ReLU(),
-      nn.Linear(128, feature_dim)
+      nn.Linear(64, feature_dim)
     )
     
     if device is not None:
@@ -173,7 +173,7 @@ class ActorCriticWithICM(nn.Module):
     current_features = self.icm.get_features(self.actor_critic, proper_obs)
     next_features = self.icm.get_features(self.actor_critic, proper_next_obs)
 
-    dist = np.linalg.norm(current_features - next_features)   
-    print(f"L2 distance between features (encoded): {dist}")
+    # dist = np.linalg.norm((current_features - next_features).detach().cpu().numpy())   
+    # print(f"L2 distance between features (encoded): {dist}")
     
     return self.icm.compute_icm_loss(current_features, next_features, proper_actions) 
