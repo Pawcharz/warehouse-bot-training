@@ -7,7 +7,7 @@ import random
 from src.models.icm_utils import get_model_flattened_parameters
 from src.algorithms.RewardsNormalizer import RewardNormalizer
 from src.utils.wandb_logger import WandBLogger
-from src.utils.seed_utils import set_all_seeds
+from src.utils.seed_utils import set_all_seeds, set_training_iteration_seed
 from src.models.intrinsic_curiosity_module import ActorCriticWithICM
 
 import torch.optim as optim
@@ -171,7 +171,8 @@ class PPOAgent:
     
   # Seeding function https://docs.pytorch.org/docs/stable/notes/randomness.html SOURCE
   def apply_seed(self):
-    set_all_seeds(self.seed)
+    print(f"Applying seed: {self.seed}, iteration: {self.iteration}")
+    set_training_iteration_seed(self.seed, self.iteration)
 
 
   # Inspired by https://github.com/nikhilbarhate99/PPO-PyTorch/blob/master/PPO.py SOURCE
@@ -326,7 +327,7 @@ class PPOAgent:
     for i in range(start_iteration, start_iteration + iterations):
       self.iteration = i
       
-      # self.apply_seed()
+      self.apply_seed()
       
       # Reset reward normalizer at first training iteration to increase determinism
       if i == start_iteration:
