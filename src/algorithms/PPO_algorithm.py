@@ -339,14 +339,15 @@ class PPOAgent:
       ep_returns = [] # returns through episodes
       ep_steps = [] # steps of episodes
       ep_intrinsic_returns = [] # intrinsic returns through episodes
-      obs, info = env.reset(self.seed)
+      obs, info = env.reset(seed=self.seed)
       
       step = 0
       steps_episode = 0
 
       log_heatmap_data = i % self.heatmap_logging_freq == 0 and self.logger is not None
+      heatmap_data = None
 
-      if log_heatmap_data and 'map_position' and 'forward_direction' in info:
+      if log_heatmap_data and 'map_position' in info and 'forward_direction' in info:
         heatmap_data = {
           'map_position': [],
           'forward_direction': [],
@@ -364,7 +365,7 @@ class PPOAgent:
         action, logprob, _, value = self.model.get_action(obs_tensor)
         next_obs, reward, truncated, terminated, info = env.step(action.item())
 
-        if log_heatmap_data and 'map_position' and 'forward_direction' in info:
+        if heatmap_data is not None and 'map_position' in info and 'forward_direction' in info:
           heatmap_data['map_position'].append(info['map_position'])
           heatmap_data['forward_direction'].append(info['forward_direction'])
 
@@ -372,12 +373,15 @@ class PPOAgent:
         
         # Process observations for buffer storage
         if isinstance(obs, dict):
-          obs_for_buffer = {key: obs[key].squeeze(0) for key in obs.keys()}
-          next_obs_for_buffer = {key: next_obs[key].squeeze(0) for key in next_obs.keys()}
+          # For dict observations (multimodal), remove batch dimension if present
+          obs_for_buffer = {key: obs[key].squeeze(0) if obs[key].ndim > 1 and obs[key].shape[0] == 1 else obs[key] 
+                           for key in obs.keys()}
+          next_obs_for_buffer = {key: next_obs[key].squeeze(0) if next_obs[key].ndim > 1 and next_obs[key].shape[0] == 1 else next_obs[key] 
+                                for key in next_obs.keys()}
         else:
-          # Fix naming
-          obs_for_buffer = obs.squeeze(0)
-          next_obs_for_buffer = next_obs.squeeze(0)
+          # For vector observations, remove batch dimension if present (Unity ML-Agents adds it, gymnasium doesn't)
+          obs_for_buffer = obs.squeeze(0) if obs.ndim > 1 and obs.shape[0] == 1 else obs
+          next_obs_for_buffer = next_obs.squeeze(0) if next_obs.ndim > 1 and next_obs.shape[0] == 1 else next_obs
         
         # Compute intrinsic reward if using ICM
         intrinsic_reward = 0.0
@@ -395,7 +399,7 @@ class PPOAgent:
         
         if done:
           
-          obs, _ = env.reset(self.seed)
+          obs, _ = env.reset(seed=self.seed)
           
           ep_steps.append(steps_episode)
           ep_returns.append(ep_return)
@@ -408,7 +412,7 @@ class PPOAgent:
         step += 1
         steps_episode += 1
     
-      if log_heatmap_data:
+      if heatmap_data is not None:
         self.logger.log_heatmap_data(i, np.array(heatmap_data['map_position']), "map_position",
                                      title=f"Agent Visit Frequency (iteration {i})",
                                      x_label="X position",

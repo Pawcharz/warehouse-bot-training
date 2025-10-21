@@ -28,7 +28,7 @@ ROOT_DIR = os.path.dirname(os.path.dirname(script_dir))
 # Add src directory to path
 sys.path.insert(0, ROOT_DIR)
 
-from src.algorithms.PPO_algorithm import PPOAgent
+from src.algorithms.PPO_algorithm import PPOAgent, create_optimizer_and_lr_scheduler
 from src.models.actor_critic import ActorCritic
 
 # Setup tensorboard logging
@@ -50,13 +50,22 @@ def evaluate_policy(agent, env, num_episodes=10, seed=0):
     """Evaluate policy and return mean/std of returns"""
     returns = []
     
+    # Put model in eval mode
+    agent.model.eval()
+    
     for episode in range(num_episodes):
         obs, _ = env.reset(seed=seed + episode)
         episode_return = 0
         done = False
         
         while not done:
-            obs_tensor = th.tensor(obs, dtype=th.float32, device=agent.device).unsqueeze(0)
+            # Convert observation to tensor (handle both dict and vector observations)
+            if isinstance(obs, dict):
+                obs_tensor = {key: th.tensor(obs[key], dtype=th.float32, device=agent.device) 
+                             for key in obs.keys()}
+            else:
+                obs_tensor = th.tensor(obs, dtype=th.float32, device=agent.device)
+            
             with th.no_grad():
                 action, _, _, _ = agent.model.get_action(obs_tensor, deterministic=True)
             
@@ -76,24 +85,40 @@ def test_custom_ppo(env_name, seed, iterations=10):
     env = gym.make(env_name)
     obs_dim = env.observation_space.shape[0]
     act_dim = env.action_space.n
-    model_net = ActorCritic(obs_dim, act_dim)
     
+    # Create model and move to device
+    model_net = ActorCritic(obs_dim, act_dim, device=device)
+    
+    # PPO settings (aligned with PPOAgent requirements)
+    learning_rate = 3e-4
     settings = {
         'device': device,
-        'lr': 3e-4,
         'gamma': 0.99,
-        'lambda': 0.95,
+        'gae_lambda': 0.95,
         'clip_eps': 0.2,
+        'value_clip_eps': 0.2,
         'max_grad_norm': 0.5,
-        'ppo_epochs': 4,
+        'epochs': 4,
         'batch_size': 64,
-        'update_timesteps': 1024,
-        'val_loss_coef': 0.5,
-        'ent_loss_coef': 0.01,
+        'buffer_size': 1024,
+        'loss_val_coef': 0.5,
+        'loss_entr_coef': 0.01,
         'seed': seed,
-        'use_tensorboard': False,
+        'heatmap_logging_freq': 10,
+        'reward_norm_epsilon': 1e-8,
+        'intrinsic_reward_scale': 0.0,  # No ICM in basic test
+        'icm_loss_weight': None,  # No ICM in basic test
     }
-    agent = PPOAgent(model_net, settings, seed=seed)
+    
+    # Create optimizer and scheduler
+    param_groups = [{'params': model_net.parameters(), 'lr': learning_rate}]
+    optimizer, scheduler = create_optimizer_and_lr_scheduler(
+        param_groups, 
+        weight_decay=1e-5
+    )
+    
+    # Create PPO agent
+    agent = PPOAgent(model_net, settings, optimizer, scheduler, start_iteration=0)
     
     start_time = time.time()
     agent.train(env, iterations=iterations)
@@ -280,7 +305,7 @@ def main():
     print("=" * 60)
     
     # Configuration
-    seeds = range(20)
+    seeds = range(1)
     custom_iterations = [10, 10]
     sb3_timesteps = [10240, 10240] # 10 * 1024 to match custom PPO
     

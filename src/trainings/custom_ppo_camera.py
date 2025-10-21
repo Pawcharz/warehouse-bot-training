@@ -10,8 +10,6 @@ warnings.filterwarnings("ignore")
 
 import time
 import torch as th
-import numpy as np
-import random
 import os
 import sys
 
@@ -78,15 +76,15 @@ def main():
         # PPO settings
         settings = {
             'gamma': 0.99,
-            'lambda': 0.95,
+            'gae_lambda': 0.95,
             'clip_eps': 0.2,
             'value_clip_eps': 0.2,
-            'ppo_epochs': 4,
+            'epochs': 4,
             'batch_size': 128,
             'buffer_size': 2048,
             'max_grad_norm': 0.5,
-            'val_loss_coef': 0.5,
-            'ent_loss_coef': 0.01,
+            'loss_val_coef': 0.5,
+            'loss_entr_coef': 0.01,
             'weight_decay': 1e-5,
             'scheduler_step_size': 100,
             'scheduler_gamma': 0.95,
