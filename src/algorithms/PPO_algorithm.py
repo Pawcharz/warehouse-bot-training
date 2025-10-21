@@ -87,8 +87,6 @@ class RolloutBuffer:
           result[key] = th.tensor(self.data[key], dtype=th.float32, device=self.device)
       else:
         result[key] = th.tensor(self.data[key], dtype=th.float32, device=self.device)
-
-      # print(f'{key}: {result[key]}')
     return result
   
   def add(self, observation, next_observation, action, reward, intrinsic_reward, log_prob, value, done):
@@ -146,6 +144,7 @@ class PPOAgent:
     
     # PPO algorithm settings
     self.clip_eps = settings.get('clip_eps', 0.2)
+    
     # value_clip_eps is an absolute margin (not relative as clip_eps) which regulates how far can critic's value predictions change from the previous iteration
     self.value_clip_eps = settings.get('value_clip_eps', 0.2)
     self.max_grad_norm = settings.get('max_grad_norm', 0.5)
@@ -157,6 +156,7 @@ class PPOAgent:
     self.loss_val_coef = settings.get('loss_val_coef', 0.5)
     self.loss_entr_coef = settings.get('loss_entr_coef', 0.01)
     
+    self.heatmap_logging_freq = settings.get('heatmap_logging_freq', 10)
     # Wandb logger
     self.logger = None
     
@@ -171,7 +171,6 @@ class PPOAgent:
     
   # Seeding function https://docs.pytorch.org/docs/stable/notes/randomness.html SOURCE
   def apply_seed(self):
-    print(f"Applying seed: {self.seed}, iteration: {self.iteration}")
     set_training_iteration_seed(self.seed, self.iteration)
 
 
@@ -272,7 +271,6 @@ class PPOAgent:
           total_loss += self.icm_loss_weight * icm_loss
           inverse_loss *= self.icm_loss_weight
           forward_loss *= self.icm_loss_weight
-          # print(f"inverse_loss: {inverse_loss.item()}, forward_loss: {forward_loss.item()}, icm_loss: {icm_loss.item()}")
         
         self.optimizer.zero_grad()
         total_loss.backward()
@@ -310,11 +308,11 @@ class PPOAgent:
       done_mask = 1 - dones[t] # To account for terminal states (mask effectively zeroes statistics)
       
       if(t == len(rewards) - 1):
-        last_return = 0
+        next_return = 0
       else:
-        last_return = returns[t+1]
+        next_return = returns[t+1]
       
-      returns[t] = rewards[t] + self.gamma * last_return * done_mask
+      returns[t] = rewards[t] + self.gamma * next_return * done_mask
       
     return th.tensor(returns, dtype=th.float32, device=self.device)
   
@@ -341,10 +339,20 @@ class PPOAgent:
       ep_returns = [] # returns through episodes
       ep_steps = [] # steps of episodes
       ep_intrinsic_returns = [] # intrinsic returns through episodes
-      obs, _ = env.reset(self.seed)
+      obs, info = env.reset(self.seed)
       
       step = 0
       steps_episode = 0
+
+      log_heatmap_data = i % self.heatmap_logging_freq == 0 and self.logger is not None
+
+      if log_heatmap_data and 'map_position' and 'forward_direction' in info:
+        heatmap_data = {
+          'map_position': [],
+          'forward_direction': [],
+        }
+        heatmap_data['map_position'].append(info['map_position'])
+        heatmap_data['forward_direction'].append(info['forward_direction'])
 
       while True:
         if isinstance(obs, dict):
@@ -354,8 +362,12 @@ class PPOAgent:
           obs_tensor = th.tensor(obs, dtype=th.float32, device=self.device)
         
         action, logprob, _, value = self.model.get_action(obs_tensor)
-        next_obs, reward, truncated, terminated, _ = env.step(action.item())
-        
+        next_obs, reward, truncated, terminated, info = env.step(action.item())
+
+        if log_heatmap_data and 'map_position' and 'forward_direction' in info:
+          heatmap_data['map_position'].append(info['map_position'])
+          heatmap_data['forward_direction'].append(info['forward_direction'])
+
         done = truncated or terminated
         
         # Process observations for buffer storage
@@ -396,6 +408,20 @@ class PPOAgent:
         step += 1
         steps_episode += 1
     
+      if log_heatmap_data:
+        self.logger.log_heatmap_data(i, np.array(heatmap_data['map_position']), "map_position",
+                                     title=f"Agent Visit Frequency (iteration {i})",
+                                     x_label="X position",
+                                     y_label="Y position",
+                                     bounds=(-5, 5),
+                                     buckets=10)
+        self.logger.log_heatmap_data(i, np.array(heatmap_data['forward_direction']), "forward_direction",
+                                     title=f"Agent Direction Frequency (iteration {i})",
+                                     x_label="X position component",
+                                     y_label="Y direction component",
+                                     bounds=(-1, 1),
+                                     buckets=10)
+
       buffer_data = buffer.get_data()
       
       np_rewards = buffer_data['rews'].cpu().numpy()
@@ -408,8 +434,6 @@ class PPOAgent:
       
       norm_extrinsic = self.extrinsic_normalizer.normalize(np_rewards)
       norm_intrinsic = self.intrinsic_normalizer.normalize(np_intrinsic_rewards)
-
-      print(f"Mean rewards: norm_extrinsic: {norm_extrinsic.mean()}, norm_intrinsic: {norm_intrinsic.mean()}; Ratio (ext/int): {norm_extrinsic.mean() / norm_intrinsic.mean()}")
 
       # Scale intrinsic before combining
       normalized_rewards = norm_extrinsic + self.intrinsic_reward_scale * norm_intrinsic

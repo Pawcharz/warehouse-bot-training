@@ -159,7 +159,7 @@ def main():
         # Evaluation
         print("\nEvaluating trained policy...")
         mean_return, std_return, mean_steps, std_steps = evaluate_policy(
-            agent.model, env, device, num_episodes=5, seed=seed, obs_type="multimodal"
+            agent.model, env, device, num_episodes=100, seed=seed, obs_type="multimodal"
         )
         
         print(f"\n=== TRAINING RESULTS ===")

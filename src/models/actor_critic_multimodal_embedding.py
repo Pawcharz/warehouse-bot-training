@@ -2,7 +2,6 @@
 import torch as th
 import torch.nn as nn
 from torch.distributions import Categorical
-import numpy as np
 
 class TaskEncoder(nn.Module):
     def __init__(self, num_items, item_embedding_dim, output_dim):

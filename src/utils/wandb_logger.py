@@ -2,6 +2,10 @@ import os
 import wandb
 import numpy as np
 from collections import defaultdict
+import matplotlib
+matplotlib.use('Agg')  # non-interactive backend - removes thinter issues
+import matplotlib.pyplot as plt
+
 
 # .env file loading
 try:
@@ -176,8 +180,57 @@ class WandBLogger:
       if intrinsic_returns is not None:
         print(f"Intrinsic Returns: {intrinsic_returns.mean():.2f} +- {intrinsic_returns.std():.2f}")
       print(f"Losses: {', '.join([f'{name}: {loss:.4f}' for name, loss in mean_losses.items()])}")
-      print(f"Learning Rates: {[f'{lr:.2e}' for lr in current_lrs]}") 
+      print(f"Learning Rates: {[f'{lr:.2e}' for lr in current_lrs]}")
     
+    def log_heatmap_data(self, iteration, heatmap_data: np.ndarray, name: str, title: str, x_label: str, y_label: str, bounds: tuple = (-5, 5), buckets: int = 10):
+      """Log heatmap data.
+      
+      Args:
+        iteration: The iteration number.
+        heatmap_data: The heatmap data to log. Shape: (timesteps, features), features: [x, y].
+        grid_size: The grid size. Shape: (x, y).
+      """
+      
+      if self.wandb_run is not None:
+        
+        coords_range = bounds[1] - bounds[0]
+
+        # --- Compute bounds and bucket indices ---
+        x_coords, y_coords = heatmap_data[:, 0], heatmap_data[:, 1]
+        
+        # Round and clip coordinates
+        x_coords = np.clip(x_coords, bounds[0], bounds[1])
+        y_coords = np.clip(y_coords, bounds[0], bounds[1])
+         
+        heatmap = np.zeros((buckets, buckets), dtype=np.float32)
+
+        # Positions transformation
+        
+        x_idx = np.clip(np.floor((x_coords - bounds[0]) * buckets / coords_range), 0, buckets-1).astype(int)
+        y_idx = np.clip(np.floor((y_coords - bounds[0]) * buckets / coords_range), 0, buckets-1).astype(int)
+
+        # Fill heatmap
+        for xi, yi in zip(x_idx, y_idx):
+          heatmap[xi, yi] += 1
+
+        fig, ax = plt.subplots()
+        cax = ax.imshow(
+          heatmap, 
+          cmap='hot', 
+          origin='lower', 
+          interpolation='nearest',
+          extent=[bounds[0], bounds[1], bounds[0], bounds[1]]
+        )
+        ax.set_title(title)
+        ax.set_xlabel(x_label)
+        ax.set_ylabel(y_label)
+        fig.colorbar(cax, ax=ax, label='Visit count')
+
+        self.wandb_run.log({f"heatmaps/{name}/iteration_{iteration}": wandb.Image(fig)}, step=iteration)
+        plt.close(fig)
+
+        print(f"Heatmap data logged for iteration {iteration}")
+
     def close(self):
       """Close the WandB run."""
       if self.wandb_run is not None:

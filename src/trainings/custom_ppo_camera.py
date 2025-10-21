@@ -54,8 +54,7 @@ def main():
     
     print(f"Using device: {device}")
     
-    # Set seed for reproducibility FIRST, before creating anything
-    seed = 1
+    seed = 0
     print(f"Using seed: {seed}")
     
     # Set all seeds before creating model or environment
@@ -63,7 +62,7 @@ def main():
     
     # Create environment
     print("\nCreating environment...")
-    env = make_env(time_scale=1, no_graphics=True, verbose=True, env_type="multimodal", env_path='environment_builds/stage2/S2_Find_2Items_64x36camera120deg_rew0_20_100/Warehouse_Bot.exe', seed=seed)
+    env = make_env(time_scale=1, no_graphics=False, verbose=True, env_type="multimodal", env_path='environment_builds/stage2/S2_Find_2Items_64x36camera120deg_rew0_20_100/Warehouse_Bot.exe', seed=seed)
 
     try:
         print(env.observation_space)
@@ -93,7 +92,8 @@ def main():
             'scheduler_gamma': 0.95,
             'device': device,
             'seed': seed,
-            # 'experiment_name': f'ppo_camera_120deg_0_20_100_find_2_items_small_env_seed_1',
+            'heatmap_logging_freq': 25,
+            'experiment_name': f'ppo_camera_120deg_0_20_100_find_2_items_heatmaps_test',
             'experiment_notes': 'ppo with 120deg camera with rewards: [0, 20, 100] with task of only finding 2 items.',
         }
         training_iterations = 200
@@ -135,7 +135,7 @@ def main():
         # Evaluation
         print("\nEvaluating trained policy...")
         mean_return, std_return, mean_steps, std_steps = evaluate_policy(
-            agent.model, env, device, num_episodes=5, seed=seed, obs_type="multimodal"
+            agent.model, env, device, num_episodes=100, seed=seed, obs_type="multimodal"
         )
         
         print(f"\n=== TRAINING RESULTS ===")
@@ -146,8 +146,8 @@ def main():
         
         # Save model (optional)
         try:
-            save_dir = get_default_save_dir("custom", "ppo_camera_120deg_0_20_100_find_2_items_small_env_seed_1")
-            filename = create_model_filename("ppo_camera_120deg_0_20_100_find_2_items_small_env_seed_1", seed)
+            save_dir = get_default_save_dir("custom", "ppo_camera_120deg_0_20_100_find_2_items_small_env_seed_0")
+            filename = create_model_filename("ppo_camera_120deg_0_20_100_find_2_items_small_env_seed_0", seed)
             
             model_path = save_model_checkpoint(
                 model=agent.model,
