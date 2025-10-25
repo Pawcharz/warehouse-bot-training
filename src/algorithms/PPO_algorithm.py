@@ -174,7 +174,7 @@ class PPOAgent:
     set_training_iteration_seed(self.seed, self.iteration)
 
 
-  # Inspired by https://github.com/nikhilbarhate99/PPO-PyTorch/blob/master/PPO.py SOURCE
+  # Inspired by https://github.com/nikhilbarhate99/PPO-PyTorch/blob/master/PPO.py#L226 SOURCE
   def calculate_loss(self, obs, actions, old_logprobs, returns, advantages, old_values=None):
     logps, entropy, values_pred = self.model.evaluate_actions(obs, actions)
     # Clipped policy loss
@@ -387,8 +387,8 @@ class PPOAgent:
         intrinsic_reward = 0.0
         if self.icm_loss_weight is not None and isinstance(self.model, ActorCriticWithICM):
           intrinsic_reward = self.model.compute_curiosity_reward(obs_tensor, 
-                                                               {key: th.tensor(next_obs[key], dtype=th.float32, device=self.device) for key in next_obs.keys()} if isinstance(next_obs, dict) else th.tensor(next_obs, dtype=th.float32, device=self.device),
-                                                               action)
+            {key: th.tensor(next_obs[key], dtype=th.float32, device=self.device) for key in next_obs.keys()} if isinstance(next_obs, dict) else th.tensor(next_obs, dtype=th.float32, device=self.device),
+            action)
           intrinsic_reward = intrinsic_reward.item()
         
         buffer.add(obs_for_buffer, next_obs_for_buffer, action, reward, intrinsic_reward, logprob, value, done)
@@ -424,7 +424,7 @@ class PPOAgent:
                                      x_label="X position component",
                                      y_label="Y direction component",
                                      bounds=(-1, 1),
-                                     buckets=10)
+                                     buckets=20)
 
       buffer_data = buffer.get_data()
       
@@ -489,6 +489,3 @@ class PPOAgent:
       learning_rates = [group['lr'] for group in self.optimizer.param_groups]
       if self.logger is not None:
         self.logger.log_console_training_summary(i, np.array(ep_returns), time_delta, np.array(ep_steps), losses, learning_rates, np_ep_intrinsic_returns)
-      
-    if self.logger is not None:
-      self.logger.close()

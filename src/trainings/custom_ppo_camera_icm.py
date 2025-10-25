@@ -6,6 +6,8 @@ This script trains a PPO agent on the custom warehouse environment using camera 
 """
 
 import warnings
+
+import wandb
 warnings.filterwarnings("ignore")
 
 import time
@@ -158,15 +160,26 @@ def main():
         
         # Evaluation
         print("\nEvaluating trained policy...")
-        mean_return, std_return, mean_steps, std_steps = evaluate_policy(
+        mean_return, std_return, mean_steps, std_steps, ep_returns, ep_steps = evaluate_policy(
             agent.model, env, device, num_episodes=100, seed=seed, obs_type="multimodal"
         )
         
+        # Logging evaluation results
         print(f"\n=== TRAINING RESULTS ===")
-        print(f"Training iterations: {training_iterations}")
-        print(f"Training time: {training_time:.2f} seconds")
-        print(f"Mean evaluation return: {mean_return:.2f} +- {std_return:.2f}")
-        print(f"Mean evaluation steps: {mean_steps:.2f} +- {std_steps:.2f}")
+        print(f"Training time: {training_time:.2f}s | Mean return: {mean_return:.2f} ± {std_return:.2f}")
+        
+        wandb.log({
+            "eval/mean_return": mean_return,
+            "eval/std_return": std_return,
+            "eval/mean_steps": mean_steps,
+            "eval/std_steps": std_steps,
+            "training/time_sec": training_time
+        })
+
+        eval_table = wandb.Table(columns=["episode", "return", "steps"])
+        for i, (ret, steps) in enumerate(zip(ep_returns, ep_steps)):
+            eval_table.add_data(i, ret, steps)
+        wandb.log({"evaluation_results": eval_table})
         
         # Save model (optional)
         try:

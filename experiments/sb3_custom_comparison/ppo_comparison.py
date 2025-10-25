@@ -40,7 +40,7 @@ def set_seed(seed):
     th.cuda.manual_seed_all(seed)
     th.backends.cudnn.deterministic = True
     th.backends.cudnn.benchmark = False
-
+    
 def evaluate_policy(agent, env, num_episodes=10, seed=0):
     """Evaluate policy and return mean/std of returns"""
     returns = []
@@ -99,10 +99,9 @@ def test_custom_ppo(env_name, seed, iterations=10):
         'loss_val_coef': 0.5,
         'loss_entr_coef': 0.01,
         'seed': seed,
-        # 'heatmap_logging_freq': 1000,  # Set high to disable for comparison
         'reward_norm_epsilon': 1e-8,
-        'intrinsic_reward_scale': 0.0,  # No ICM in basic test
-        'icm_loss_weight': None,  # No ICM in basic test
+        'intrinsic_reward_scale': 0.0,
+        'icm_loss_weight': None,
     }
     
     # Create optimizer and scheduler

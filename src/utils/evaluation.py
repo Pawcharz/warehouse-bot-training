@@ -76,4 +76,4 @@ def evaluate_policy(model, env, device: th.device, num_episodes: int = 10, seed:
         print(f"Best episode: {max(returns):.2f}")
         print(f"Worst episode: {min(returns):.2f}")
     
-    return mean_return, std_return, mean_steps, std_steps
+    return mean_return, std_return, mean_steps, std_steps, returns, steps

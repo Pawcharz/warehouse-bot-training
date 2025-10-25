@@ -32,7 +32,7 @@ class WandBLogger:
       wandb_entity = settings.get('wandb_entity',  os.getenv('WANDB_ENTITY'))
       experiment_name = settings.get('experiment_name', None)
 
-      if experiment_name is not None:
+      if experiment_name is not None and project_name is not None and wandb_entity is not None:
         try:
           self.wandb_run = wandb.init(
             project=project_name,
