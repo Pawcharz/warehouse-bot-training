@@ -28,7 +28,7 @@ class UnityMultimodalGymWrapper(gym.Env):
 
     self.add_previous_action = add_previous_action
     
-  def reset(self, seed=None, options=None):
+  def reset(self):
     self.unity_env.reset()
     decision_steps, _ = self.unity_env.get_steps(self.behavior_name)
     

@@ -93,10 +93,10 @@ def main():
             'device': device,
             'seed': seed,
             'heatmap_logging_freq': 25,
-            'experiment_name': f'ppo_camera_120deg_0_20_100_find_2_items_heatmaps_test',
+            'experiment_name': f'ppo_camera_120deg_0_20_100_find_2_items_train_1',
             'experiment_notes': 'ppo with 120deg camera with rewards: [0, 20, 100] with task of only finding 2 items.',
         }
-        training_iterations = 300
+        training_iterations = 400
 
         # Create model
         model_net = ActorCriticMultimodal(act_dim, visual_obs_size=obs_dim_visual, num_items=2, device=device)
@@ -157,8 +157,8 @@ def main():
         
         # Save model (optional)
         try:
-            save_dir = get_default_save_dir("custom", "ppo_camera_120deg_0_20_100_find_2_items_small_env_seed_0")
-            filename = create_model_filename("ppo_camera_120deg_0_20_100_find_2_items_small_env_seed_0", seed)
+            save_dir = get_default_save_dir("custom", "ppo_camera_120deg_0_20_100_find_2_items_train_1")
+            filename = create_model_filename("ppo_camera_120deg_0_20_100_find_2_items_train_1", seed)
             
             model_path = save_model_checkpoint(
                 model=agent.model,

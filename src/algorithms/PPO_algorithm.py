@@ -114,7 +114,7 @@ class PPOAgent:
     
     # Seeding
     self.seed = settings.get('seed', 0)
-    self.apply_seed()
+    set_all_seeds(self.seed)
     
     self.model = model
     self.optimizer = optimizer
@@ -168,11 +168,6 @@ class PPOAgent:
     # Log hyperparams
     if self.logger is not None:
       self.logger.log_hyperparameters(settings)
-    
-  # Seeding function https://docs.pytorch.org/docs/stable/notes/randomness.html SOURCE
-  def apply_seed(self):
-    set_training_iteration_seed(self.seed, self.iteration)
-
 
   # Inspired by https://github.com/nikhilbarhate99/PPO-PyTorch/blob/master/PPO.py#L226 SOURCE
   def calculate_loss(self, obs, actions, old_logprobs, returns, advantages, old_values=None):
@@ -325,8 +320,6 @@ class PPOAgent:
     for i in range(start_iteration, start_iteration + iterations):
       self.iteration = i
       
-      self.apply_seed()
-      
       # Reset reward normalizer at first training iteration to increase determinism
       if i == start_iteration:
         self.extrinsic_normalizer.reset()
@@ -339,7 +332,7 @@ class PPOAgent:
       ep_returns = [] # returns through episodes
       ep_steps = [] # steps of episodes
       ep_intrinsic_returns = [] # intrinsic returns through episodes
-      obs, info = env.reset(seed=self.seed)
+      obs, info = env.reset()
       
       step = 0
       steps_episode = 0
@@ -399,7 +392,7 @@ class PPOAgent:
         
         if done:
           
-          obs, _ = env.reset(seed=self.seed)
+          obs, _ = env.reset()
           
           ep_steps.append(steps_episode)
           ep_returns.append(ep_return)
