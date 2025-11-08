@@ -48,17 +48,17 @@ class GAE:
     for t in reversed(range(len(rewards))):
       done_mask = 1 - dones[t] # To account for terminal states (mask effectively zeroes statistics) 
       
-      if(t == len(rewards) - 1):
-        last_value = 0
+      if t == len(rewards) - 1:
+          next_value = 0
       else:
-        last_value = values[t+1]
+          next_value = values[t+1]
       
-      td_residual = rewards[t] + self.gamma * last_value * done_mask - values[t]
+      td_residual = rewards[t] + self.gamma * next_value * done_mask - values[t]
       advantages[t] = td_residual + self.gamma * self.lambda_ * last_advantage * done_mask
       last_advantage = advantages[t]
-      
+        
     return advantages
-  
+    
 class RolloutBuffer:
   def __init__(self, device):
     self.device = device
@@ -269,6 +269,11 @@ class PPOAgent:
         
         self.optimizer.zero_grad()
         total_loss.backward()
+
+        # Logs only for first batch (later batches may not represent gradients correctly as parameters will already change)
+        if self.logger is not None and batch_i == 0 and epoch == 0:
+          named_model_params = get_model_flattened_parameters(self.model)
+          self.logger.log_gradients(named_model_params, iteration=self.iteration)
         
         # Gradient clipping
         th.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=self.max_grad_norm)
@@ -284,10 +289,7 @@ class PPOAgent:
           losses['forward_loss'].append(forward_loss.item())
           losses['icm_loss'].append(icm_loss.item() * self.icm_loss_weight)
         
-        # Logs only for first batch (later batches may not represent gradients correctly as parameters will already change)
-        if self.logger is not None and batch_i == 0:
-          named_model_params = get_model_flattened_parameters(self.model)
-          self.logger.log_gradients(named_model_params, iteration=self.iteration)
+
       
     if self.logger is not None and old_params is not None:
       named_model_params = get_model_flattened_parameters(self.model)
@@ -319,11 +321,6 @@ class PPOAgent:
     
     for i in range(start_iteration, start_iteration + iterations):
       self.iteration = i
-      
-      # Reset reward normalizer at first training iteration to increase determinism
-      if i == start_iteration:
-        self.extrinsic_normalizer.reset()
-        self.intrinsic_normalizer.reset()
       
       time_start = time.time()
       
@@ -398,6 +395,7 @@ class PPOAgent:
           ep_returns.append(ep_return)
           ep_intrinsic_returns.append(ep_intrinsic_return)
           ep_return = 0
+          ep_intrinsic_return = 0
           steps_episode = 0
           if step >= self.buffer_size:
             break
@@ -424,8 +422,10 @@ class PPOAgent:
       np_rewards = buffer_data['rews'].cpu().numpy()
       np_intrinsic_rewards = buffer_data['intrinsic_rews'].cpu().numpy()
       
-      values = buffer_data['vals']
-      dones = buffer_data['dones']
+      # FIX: Convert tensors to numpy before passing to GAE (CRITICAL FIX)
+      values = buffer_data['vals'].cpu().numpy()
+      dones = buffer_data['dones'].cpu().numpy()
+      
       actions = buffer_data['acts']
       old_logprobs = buffer_data['logprobs']
       
@@ -440,10 +440,18 @@ class PPOAgent:
       advantages = self.gae.compute_gae(normalized_rewards, values, dones)
       advantages = th.tensor(advantages, dtype=th.float32, device=self.device)
       
+      # FIX: Add advantage normalization (if enabled in settings)
+      if self.settings.get('normalize_advantages', False):
+        advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+      
       observations = buffer_data['obs']
       next_observations = buffer_data['next_obs']
+      
+      # Convert values and dones back to tensors for update
+      values_tensor = buffer_data['vals']
+      dones_tensor = buffer_data['dones']
 
-      losses = self.update(observations, actions, old_logprobs, returns, advantages, old_values=values, dones=dones, next_obs=next_observations)
+      losses = self.update(observations, actions, old_logprobs, returns, advantages, old_values=values_tensor, dones=dones_tensor, next_obs=next_observations)
       
       # Update scheduler
       if self.scheduler is not None:
