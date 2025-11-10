@@ -101,6 +101,8 @@ def main():
         'loss_entr_coef': 0.01,
         'device': device,
         'seed': seed,
+        'eval_freq': 50,  # Evaluate every 50 iterations
+        'eval_episodes': 10,  # Run 10 episodes for evaluation
         'experiment_name': f'ppo_seed_{seed}',
         'experiment_notes': 'Stage1 Find Deliver with raycasts'
     }
@@ -144,7 +146,7 @@ def main():
     
     # Logging evaluation results
     print(f"\n=== TRAINING RESULTS ===")
-    print(f"Training time: {training_time:.2f}s | Mean return: {mean_return:.2f} ± {std_return:.2f}")
+    print(f"Training time: {training_time:.2f}s | Mean return: {mean_return:.2f} +- {std_return:.2f}")
         
     wandb.log({
         "eval/mean_return": mean_return,

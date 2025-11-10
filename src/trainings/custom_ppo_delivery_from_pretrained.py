@@ -99,6 +99,8 @@ def main():
             'device': device,
             'seed': seed,
             'value_clip_eps': 0.2,
+            'eval_freq': 25,  # Evaluate every 25 iterations
+            'eval_episodes': 10,  # Run 10 episodes for evaluation
             'experiment_name': f'ppo_camera_120deg_0_20_100_find_2_items_deliver_task_embedding_attempt_1',
             'experiment_notes': 'PPO delivery training with 120deg camera, rewards: [0, 20, 100, 100], find and deliver item task with 2 items',
         }
@@ -165,7 +167,7 @@ def main():
         
         # Logging evaluation results
         print(f"\n=== TRAINING RESULTS ===")
-        print(f"Training time: {training_time:.2f}s | Mean return: {mean_return:.2f} ± {std_return:.2f}")
+        print(f"Training time: {training_time:.2f}s | Mean return: {mean_return:.2f} +- {std_return:.2f}")
         
         wandb.log({
             "eval/mean_return": mean_return,

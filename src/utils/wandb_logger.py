@@ -145,6 +145,24 @@ class WandBLogger:
                     log_dict[f'training/{key}'] = value
         
             self.wandb_run.log(log_dict, step=iteration)
+    
+    def log_evaluation_metrics(self, iteration, metrics):
+        """Log evaluation metrics from deterministic policy runs."""
+        
+        if self.wandb_run is not None:
+            log_dict = defaultdict(list)
+            
+            for key, value in metrics.items():
+                if value is not None:
+                    log_dict[f'eval/{key}'] = value
+            
+            self.wandb_run.log(log_dict, step=iteration)
+    
+    def log_event(self, iteration, event_name):
+        """Log a training event (e.g., early stopping)."""
+        
+        if self.wandb_run is not None:
+            self.wandb_run.log({f'events/{event_name}': 1}, step=iteration)
 
     def log_losses(self, iteration, mean_losses):
         """Log training loss components."""

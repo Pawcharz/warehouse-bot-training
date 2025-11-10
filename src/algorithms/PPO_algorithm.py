@@ -9,6 +9,7 @@ from src.algorithms.RewardsNormalizer import RewardNormalizer
 from src.utils.wandb_logger import WandBLogger
 from src.utils.seed_utils import set_all_seeds, set_training_iteration_seed
 from src.models.intrinsic_curiosity_module import ActorCriticWithICM
+from src.utils.evaluation import evaluate_policy
 
 import torch.optim as optim
 
@@ -105,12 +106,13 @@ class RolloutBuffer:
     
   
 class PPOAgent:
-  def __init__(self, model, settings: dict, optimizer: th.optim.Optimizer, scheduler = None, start_iteration = 0):
+  def __init__(self, model, settings: dict, optimizer: th.optim.Optimizer, scheduler = None, start_iteration = 0, start_timestep = 0):
     self.settings = settings
     self.device = settings.get('device', 'cpu')
     
     # Runtime variables
     self.iteration = start_iteration
+    self.total_timesteps = start_timestep
     
     # Seeding
     self.seed = settings.get('seed', 0)
@@ -157,6 +159,11 @@ class PPOAgent:
     self.loss_entr_coef = settings.get('loss_entr_coef', 0.01)
     
     self.heatmap_logging_freq = settings.get('heatmap_logging_freq', 10)
+    
+    # Evaluation settings
+    self.eval_freq = settings.get('eval_freq', None)  # Evaluate every K iterations (None = no evaluation during training)
+    self.eval_episodes = settings.get('eval_episodes', 10)  # Number of episodes for evaluation
+    
     # Wandb logger
     self.logger = None
     
@@ -313,7 +320,17 @@ class PPOAgent:
       
     return th.tensor(returns, dtype=th.float32, device=self.device)
   
-  def train(self, env: gym.Env, iterations):
+  def train(self, env: gym.Env, iterations, early_stopping_fn=None):
+    """
+    Train the PPO agent.
+    
+    Args:
+      env: Gymnasium environment
+      iterations: Number of training iterations
+      early_stopping_fn: Optional callable that takes (iteration, metrics, losses) and returns bool.
+                        If it returns True, training stops early.
+                        Signature: fn(iteration: int, metrics: dict, losses: dict) -> bool
+    """
     
     buffer = RolloutBuffer(self.device)
     
@@ -417,14 +434,16 @@ class PPOAgent:
                                      bounds=(-1, 1),
                                      buckets=20)
 
+      # Update total timesteps
+      self.total_timesteps += step
+      
       buffer_data = buffer.get_data()
       
       np_rewards = buffer_data['rews'].cpu().numpy()
       np_intrinsic_rewards = buffer_data['intrinsic_rews'].cpu().numpy()
       
-      # FIX: Convert tensors to numpy before passing to GAE (CRITICAL FIX)
-      values = buffer_data['vals'].cpu().numpy()
-      dones = buffer_data['dones'].cpu().numpy()
+      values = buffer_data['vals']
+      dones = buffer_data['dones']
       
       actions = buffer_data['acts']
       old_logprobs = buffer_data['logprobs']
@@ -446,12 +465,8 @@ class PPOAgent:
       
       observations = buffer_data['obs']
       next_observations = buffer_data['next_obs']
-      
-      # Convert values and dones back to tensors for update
-      values_tensor = buffer_data['vals']
-      dones_tensor = buffer_data['dones']
 
-      losses = self.update(observations, actions, old_logprobs, returns, advantages, old_values=values_tensor, dones=dones_tensor, next_obs=next_observations)
+      losses = self.update(observations, actions, old_logprobs, returns, advantages, old_values=values, dones=dones, next_obs=next_observations)
       
       # Update scheduler
       if self.scheduler is not None:
@@ -474,7 +489,8 @@ class PPOAgent:
         'mean_steps': np_ep_steps.mean(),
         'std_steps': np_ep_steps.std(),
         'time_taken': time_delta,
-        'episodes_count': len(ep_returns)
+        'episodes_count': len(ep_returns),
+        'total_timesteps': self.total_timesteps
       }
       if self.logger is not None:
         self.logger.log_training_metrics(i, metrics)
@@ -490,3 +506,47 @@ class PPOAgent:
       learning_rates = [group['lr'] for group in self.optimizer.param_groups]
       if self.logger is not None:
         self.logger.log_console_training_summary(i, np.array(ep_returns), time_delta, np.array(ep_steps), losses, learning_rates, np_ep_intrinsic_returns)
+      
+      # Periodic evaluation
+      if self.eval_freq is not None and (i + 1) % self.eval_freq == 0:
+        print(f"\n=== EVALUATING AT ITERATION {i} ===")
+        eval_start = time.time()
+        
+        # Determine observation type from environment
+        obs_type = "multimodal" if isinstance(obs, dict) else "vector"
+        
+        # Run deterministic evaluation
+        eval_mean_return, eval_std_return, eval_mean_steps, eval_std_steps, eval_returns, eval_steps = evaluate_policy(
+          self.model, env, self.device, 
+          num_episodes=self.eval_episodes, 
+          seed=self.seed,
+          obs_type=obs_type,
+          verbose=False
+        )
+        
+        eval_time = time.time() - eval_start
+        
+        # Log evaluation metrics
+        eval_metrics = {
+          'mean_return': eval_mean_return,
+          'std_return': eval_std_return,
+          'mean_steps': eval_mean_steps,
+          'std_steps': eval_std_steps,
+          'time_taken': eval_time,
+          'num_episodes': self.eval_episodes,
+          'total_timesteps': self.total_timesteps
+        }
+        
+        if self.logger is not None:
+          self.logger.log_evaluation_metrics(i, eval_metrics)
+        
+        print(f"Evaluation: Mean return = {eval_mean_return:.2f} +- {eval_std_return:.2f}, Mean steps = {eval_mean_steps:.2f} +- {eval_std_steps:.2f}, Time = {eval_time:.2f}s")
+      
+        # Check early stopping condition
+        if early_stopping_fn is not None:
+          should_stop = early_stopping_fn('mean_evaluation_return', eval_mean_return)
+          if should_stop:
+            print(f"\n=== EARLY STOPPING TRIGGERED AT ITERATION {i} ===")
+            if self.logger is not None:
+              self.logger.log_event(i, "early_stopping_triggered")
+            break

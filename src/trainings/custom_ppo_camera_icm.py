@@ -106,6 +106,8 @@ def main():
             'scheduler_gamma': 0.95,
             'device': device,
             'seed': seed,
+            'eval_freq': 25,  # Evaluate every 25 iterations
+            'eval_episodes': 10,  # Run 10 episodes for evaluation
             'experiment_name': f'icm_module_test_small_env_with_textures_stackedObs_x5',
             'experiment_notes': 'ppo with 120deg camera with rewards: [0, 20, 100] with task of only finding 2 items and ICM module on environment with more complex textures and obstacles',
         }
@@ -166,7 +168,7 @@ def main():
         
         # Logging evaluation results
         print(f"\n=== TRAINING RESULTS ===")
-        print(f"Training time: {training_time:.2f}s | Mean return: {mean_return:.2f} ± {std_return:.2f}")
+        print(f"Training time: {training_time:.2f}s | Mean return: {mean_return:.2f} +- {std_return:.2f}")
         
         wandb.log({
             "eval/mean_return": mean_return,

@@ -31,6 +31,7 @@ from src.models.actor_critic_multimodal_embedding import ActorCriticMultimodal
 from src.utils.seed_utils import set_all_seeds
 from src.models.model_utils import count_parameters, save_model_checkpoint, create_model_filename, get_default_save_dir
 from src.utils.evaluation import evaluate_policy
+from src.utils.early_stopping import EarlyStoppingCondition
 
 def create_param_groups(model, visual_lr, task_lr, general_lr):
     
@@ -86,17 +87,19 @@ def main():
             'buffer_size': 2048,
             'max_grad_norm': 0.5,
             'loss_val_coef': 0.5,
-            'loss_entr_coef': 0.01,
+            'loss_entr_coef': 0.015,
             'weight_decay': 1e-5,
             'scheduler_step_size': 100,
             'scheduler_gamma': 0.95,
             'device': device,
             'seed': seed,
             'heatmap_logging_freq': 25,
-            'experiment_name': f'ppo_camera_120deg_0_20_100_find_2_items_train_1',
+            'eval_freq': 25,  # Evaluate every 25 iterations
+            'eval_episodes': 100,  # Run 10 episodes for evaluation
+            'experiment_name': f'ppo_camera_120deg_0_20_100_find_2_items_train_0_seed_0',
             'experiment_notes': 'ppo with 120deg camera with rewards: [0, 20, 100] with task of only finding 2 items.',
         }
-        training_iterations = 400
+        training_iterations = 300
 
         # Create model
         model_net = ActorCriticMultimodal(act_dim, visual_obs_size=obs_dim_visual, num_items=2, device=device)
@@ -126,8 +129,12 @@ def main():
         print("\nStarting training...")
         start_time = time.time()
         
+        # Optional: Enable early stopping (uncomment to use)
+        # For PPO, early stopping is applied on the evaluation mean return
+        early_stop_fn = EarlyStoppingCondition(window_size=1, metric_threshold=95.0)
+        
         # Training iterations
-        agent.train(env, iterations=training_iterations)
+        agent.train(env, iterations=training_iterations, early_stopping_fn=early_stop_fn)
         
         training_time = time.time() - start_time
         print(f"\nTraining completed in {training_time:.2f} seconds")
@@ -140,7 +147,7 @@ def main():
         
         # Logging evaluation results
         print(f"\n=== TRAINING RESULTS ===")
-        print(f"Training time: {training_time:.2f}s | Mean return: {mean_return:.2f} ± {std_return:.2f}")
+        print(f"Training time: {training_time:.2f}s | Mean return: {mean_return:.2f} +- {std_return:.2f}")
         
         wandb.log({
             "eval/mean_return": mean_return,
@@ -157,8 +164,8 @@ def main():
         
         # Save model (optional)
         try:
-            save_dir = get_default_save_dir("custom", "ppo_camera_120deg_0_20_100_find_2_items_train_1")
-            filename = create_model_filename("ppo_camera_120deg_0_20_100_find_2_items_train_1", seed)
+            save_dir = get_default_save_dir("custom", "ppo_camera_120deg_0_20_100_find_2_items_train_0_seed_0")
+            filename = create_model_filename("ppo_camera_120deg_0_20_100_find_2_items_train_0_seed_0", seed)
             
             model_path = save_model_checkpoint(
                 model=agent.model,
