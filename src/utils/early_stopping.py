@@ -35,5 +35,8 @@ class EarlyStoppingCondition:
                       f"{metric_name} = {mean_metric:.2f} >= {self.metric_threshold:.2f}")
                 return True
         
+        if len(self.metric_history) > self.window_size:
+            self.metric_history.pop(0)
+        
         return False
 
