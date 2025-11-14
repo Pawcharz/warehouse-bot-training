@@ -33,6 +33,7 @@ from src.models.actor_critic_multimodal_embedding import ActorCriticMultimodal
 from src.models.model_utils import count_parameters, save_model_checkpoint, create_model_filename, get_default_save_dir, load_model_checkpoint
 from src.utils.evaluation import evaluate_policy
 from src.utils.seed_utils import set_all_seeds
+from src.utils.early_stopping import EarlyStoppingCondition
 
 def create_param_groups(model, visual_lr, task_lr, general_lr):
     
@@ -89,6 +90,7 @@ def main():
             'gamma': 0.99,
             'gae_lambda': 0.95,
             'clip_eps': 0.2,
+            'value_clip_eps': 0.2,
             'epochs': 4,
             'batch_size': 128,
             'buffer_size': 2048,
@@ -96,21 +98,23 @@ def main():
             'loss_val_coef': 0.5,
             'loss_entr_coef': 0.015,
             'weight_decay': 1e-5,
+            'scheduler_step_size': 100,
+            'scheduler_gamma': 0.95,
             'device': device,
             'seed': seed,
-            'value_clip_eps': 0.2,
+            'heatmap_logging_freq': 25,
             'eval_freq': 25,  # Evaluate every 25 iterations
-            'eval_episodes': 10,  # Run 10 episodes for evaluation
-            'experiment_name': f'ppo_camera_120deg_0_20_100_find_2_items_deliver_task_embedding_attempt_1',
+            'eval_episodes': 100,  # Run 10 episodes for evaluation
+            'experiment_name': f'ppo_camera_120deg_0_20_100_find_2_items_deliver_from_pretrained_0_seed_0',
             'experiment_notes': 'PPO delivery training with 120deg camera, rewards: [0, 20, 100, 100], find and deliver item task with 2 items',
         }
-        training_iterations = 300
+        training_iterations = 1000
         
         # Create model architecture (same as original)
         model_net = ActorCriticMultimodal(act_dim, visual_obs_size=obs_dim_visual, num_items=2, device=device)
         
         # Load pre-trained model
-        pretrained_model_path = "saved_models/custom/ppo_camera_120deg_0_20_100_find_2_items_task_embedding_attempt_1/ppo_camera_120deg_0_20_100_find_2_items_task_embedding_attempt_1_seed_0.pth"
+        pretrained_model_path = "saved_models-custom-ppo_camera_120deg_0_20_100_find_2_items_train_0_seed_0-ppo_camera_120deg_0_20_100_find_2_items_train_0_seed_0.pth"
         print(f"\nLoading pre-trained model from: {pretrained_model_path}")
         
         if os.path.exists(pretrained_model_path):
@@ -152,9 +156,13 @@ def main():
         print("\nStarting delivery training...")
         start_time = time.time()
         
+        # Optional: Enable early stopping (uncomment to use)
+        # For PPO, early stopping is applied on the evaluation mean return
+        early_stop_fn = EarlyStoppingCondition(window_size=1, metric_threshold=195.0)
+        
         # Training iterations - get from checkpoint data
         pretrained_iterations = checkpoint.get('training_iterations', 0)
-        agent.train(env, iterations=training_iterations, start_iteration=pretrained_iterations)
+        agent.train(env, iterations=training_iterations, start_iteration=pretrained_iterations, early_stopping_fn=early_stop_fn)
         
         training_time = time.time() - start_time
         print(f"\nDelivery training completed in {training_time:.2f} seconds")
