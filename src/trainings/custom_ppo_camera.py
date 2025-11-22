@@ -164,7 +164,7 @@ def main():
         
         # Save model (optional)
         try:
-            save_dir = get_default_save_dir("custom", "ppo_camera_120deg_0_20_100_find_2_items_train_0_seed_0")
+            save_dir = get_default_save_dir("custom", "ppo_camera_120deg_0_20_100_find_2_items_0_seed_0")
             filename = create_model_filename("ppo_camera_120deg_0_20_100_find_2_items_train_0_seed_0", seed)
             
             model_path = save_model_checkpoint(

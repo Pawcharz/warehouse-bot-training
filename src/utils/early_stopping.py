@@ -27,16 +27,17 @@ class EarlyStoppingCondition:
         """Check if should stop training."""
         self.metric_history.append(metric)
         
+        # Keeps only the most recent window_size metrics
+        if len(self.metric_history) > self.window_size:
+            self.metric_history.pop(0)
+        
         # Check condition
-        if len(self.metric_history) == self.window_size:
+        if len(self.metric_history) >= self.window_size:
             mean_metric = np.mean(self.metric_history)
             if mean_metric >= self.metric_threshold:
                 print(f"\n✓ Early stopping: avg return over last {self.window_size} iters "
                       f"{metric_name} = {mean_metric:.2f} >= {self.metric_threshold:.2f}")
                 return True
-        
-        if len(self.metric_history) > self.window_size:
-            self.metric_history.pop(0)
         
         return False
 

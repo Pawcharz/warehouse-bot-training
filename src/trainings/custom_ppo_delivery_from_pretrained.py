@@ -114,7 +114,7 @@ def main():
         model_net = ActorCriticMultimodal(act_dim, visual_obs_size=obs_dim_visual, num_items=2, device=device)
         
         # Load pre-trained model
-        pretrained_model_path = "saved_models-custom-ppo_camera_120deg_0_20_100_find_2_items_train_0_seed_0-ppo_camera_120deg_0_20_100_find_2_items_train_0_seed_0.pth"
+        pretrained_model_path = "saved_models/custom/ppo_camera_120deg_0_20_100_find_2_items_train_0_seed_0/ppo_camera_120deg_0_20_100_find_2_items_train_0_seed_0.pth"
         print(f"\nLoading pre-trained model from: {pretrained_model_path}")
         
         if os.path.exists(pretrained_model_path):
@@ -150,7 +150,8 @@ def main():
         
         # Create PPO agent with the loaded model
         print("\nCreating PPO agent for delivery training...")
-        agent = PPOAgent(model_net, settings, optimizer, scheduler)
+        pretrained_iterations = checkpoint.get('training_iterations', 0)
+        agent = PPOAgent(model_net, settings, optimizer, scheduler, start_iteration=pretrained_iterations)
         
         # Training on delivery environment
         print("\nStarting delivery training...")
@@ -161,8 +162,7 @@ def main():
         early_stop_fn = EarlyStoppingCondition(window_size=1, metric_threshold=195.0)
         
         # Training iterations - get from checkpoint data
-        pretrained_iterations = checkpoint.get('training_iterations', 0)
-        agent.train(env, iterations=training_iterations, start_iteration=pretrained_iterations, early_stopping_fn=early_stop_fn)
+        agent.train(env, iterations=training_iterations, early_stopping_fn=early_stop_fn)
         
         training_time = time.time() - start_time
         print(f"\nDelivery training completed in {training_time:.2f} seconds")

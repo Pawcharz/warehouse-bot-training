@@ -31,16 +31,24 @@ class WandBLogger:
         project_name = settings.get('wandb_project',    os.getenv('WANDB_PROJECT'))
         wandb_entity = settings.get('wandb_entity',    os.getenv('WANDB_ENTITY'))
         experiment_name = settings.get('experiment_name', None)
+        wandb_group = settings.get('wandb_group', None)
+        wandb_tags = settings.get('wandb_tags', [])
 
         if experiment_name is not None and project_name is not None and wandb_entity is not None:
             try:
-                self.wandb_run = wandb.init(
-                    project=project_name,
-                    name=experiment_name,
-                    entity=wandb_entity,
-                    tags=[f"seed_{seed}", "ppo"],
-                    reinit=True
-                )
+                init_kwargs = {
+                    'project': project_name,
+                    'name': experiment_name,
+                    'entity': wandb_entity,
+                    'tags': [f"seed_{seed}", "ppo"] + list(wandb_tags),
+                    'reinit': True
+                }
+                
+                # Add group if specified (useful for multiseed experiments)
+                if wandb_group is not None:
+                    init_kwargs['group'] = wandb_group
+                
+                self.wandb_run = wandb.init(**init_kwargs)
                 print(f"WandB initialized: {self.wandb_run.name}")
             except Exception as e:
                 raise Exception(f"WandB failed to initialize: {e}")
