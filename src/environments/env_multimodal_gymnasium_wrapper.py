@@ -28,20 +28,37 @@ class UnityMultimodalGymWrapper(gym.Env):
 
     self.add_previous_action = add_previous_action
     
-  def reset(self, seed=None, options=None):
+  def reset(self):
     self.unity_env.reset()
     decision_steps, _ = self.unity_env.get_steps(self.behavior_name)
     
-    observation = self.prepare_obs(decision_steps.obs, 0)
-    return observation, {}
+    observation, info = self.prepare_obs(decision_steps.obs, 0)
+    return observation, info
+  
+  def split_vector_observation(self, vector_obs):
+    """
+    Split vector observation into actual observations and info
+    Context: MlAgents framework does not allow to pass info separately - so it had to be passed as observations and split in the gymnasium wrapper
+    """
+
+    actual_observations = np.array([vector_obs[0][:2]])
+
+    info_observations = vector_obs[0][2:]
+    info = {
+      "map_position": info_observations[0:2],
+      "forward_direction": info_observations[2:4],
+    }
+
+    return actual_observations, info
   
   # action is an integer - id of the action
   def prepare_obs(self, env_obs, action: int):
-  
+    vector_obs = env_obs[1]
+    vector_obs, info = self.split_vector_observation(vector_obs)
     if self.add_previous_action:
-      return {"visual": env_obs[0], "vector": env_obs[1], "previous_action": np.array([action], dtype=np.uint8)}
+      return {"visual": env_obs[0], "vector": vector_obs, "previous_action": np.array([action], dtype=np.uint8)}, info
     else:
-      return {"visual": env_obs[0], "vector": env_obs[1]}
+      return {"visual": env_obs[0], "vector": vector_obs}, info
 
   def step(self, action):
     action_tuple = ActionTuple()
@@ -59,7 +76,7 @@ class UnityMultimodalGymWrapper(gym.Env):
     decision_steps, terminal_steps = self.unity_env.get_steps(self.behavior_name)
 
     if 0 in terminal_steps:
-      obs = self.prepare_obs(terminal_steps.obs, action_proper)
+      obs, info = self.prepare_obs(terminal_steps.obs, action_proper)
       reward = terminal_steps.reward[0]
       
       # terminated - Natural episode ending.
@@ -71,13 +88,13 @@ class UnityMultimodalGymWrapper(gym.Env):
       
       # terminated and truncated are mutually exclusive
     else:
-      obs = self.prepare_obs(decision_steps.obs, action_proper)
-      # obs = decision_steps.obs[1]
+      obs, info = self.prepare_obs(decision_steps.obs, action_proper)
+      
       reward = decision_steps.reward[0]
       terminated = False
       truncated = False
     
-    return obs, reward, terminated, truncated, {}
+    return obs, reward, terminated, truncated, info
 
   def render(self, mode='human'):
     pass  # Unity renders its own environment

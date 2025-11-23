@@ -18,7 +18,7 @@ def set_all_seeds(seed: int):
 def set_training_iteration_seed(base_seed: int, iteration: int):
   """Sets seed based on training or evaluation iteration"""
   
-  iteration_seed = base_seed + iteration
+  iteration_seed = base_seed + 1000 * iteration
   set_all_seeds(iteration_seed)
   
   return iteration_seed

@@ -18,7 +18,7 @@ import random
 import sys
 import os
 from datetime import datetime
-from torch.utils.tensorboard import SummaryWriter
+import wandb
 warnings.filterwarnings('ignore')
 
 # Get the root directory (two levels up from this script)
@@ -28,13 +28,8 @@ ROOT_DIR = os.path.dirname(os.path.dirname(script_dir))
 # Add src directory to path
 sys.path.insert(0, ROOT_DIR)
 
-from src.algorithms.PPO_algorithm import PPOAgent
+from src.algorithms.PPO_algorithm import PPOAgent, create_optimizer_and_lr_scheduler
 from src.models.actor_critic import ActorCritic
-
-# Setup tensorboard logging
-log_dir = os.path.join(script_dir, "tensorboard_logs")
-os.makedirs(log_dir, exist_ok=True)
-writer = SummaryWriter(log_dir=log_dir)
 
 def set_seed(seed):
     """Set all random seeds for reproducibility"""
@@ -45,10 +40,13 @@ def set_seed(seed):
     th.cuda.manual_seed_all(seed)
     th.backends.cudnn.deterministic = True
     th.backends.cudnn.benchmark = False
-
+    
 def evaluate_policy(agent, env, num_episodes=10, seed=0):
     """Evaluate policy and return mean/std of returns"""
     returns = []
+    
+    # Put model in eval mode
+    agent.model.eval()
     
     for episode in range(num_episodes):
         obs, _ = env.reset(seed=seed + episode)
@@ -56,7 +54,13 @@ def evaluate_policy(agent, env, num_episodes=10, seed=0):
         done = False
         
         while not done:
-            obs_tensor = th.tensor(obs, dtype=th.float32, device=agent.device).unsqueeze(0)
+            # Convert observation to tensor (handle both dict and vector observations)
+            if isinstance(obs, dict):
+                obs_tensor = {key: th.tensor(obs[key], dtype=th.float32, device=agent.device) 
+                             for key in obs.keys()}
+            else:
+                obs_tensor = th.tensor(obs, dtype=th.float32, device=agent.device)
+            
             with th.no_grad():
                 action, _, _, _ = agent.model.get_action(obs_tensor, deterministic=True)
             
@@ -76,24 +80,39 @@ def test_custom_ppo(env_name, seed, iterations=10):
     env = gym.make(env_name)
     obs_dim = env.observation_space.shape[0]
     act_dim = env.action_space.n
-    model_net = ActorCritic(obs_dim, act_dim)
     
+    # Create model and move to device
+    model_net = ActorCritic(obs_dim, act_dim, device=device)
+    
+    # PPO settings (aligned with PPOAgent requirements)
+    learning_rate = 3e-4
     settings = {
         'device': device,
-        'lr': 3e-4,
         'gamma': 0.99,
-        'lambda': 0.95,
+        'gae_lambda': 0.95,
         'clip_eps': 0.2,
+        'value_clip_eps': 0.2,
         'max_grad_norm': 0.5,
-        'ppo_epochs': 4,
+        'epochs': 4,
         'batch_size': 64,
-        'update_timesteps': 1024,
-        'val_loss_coef': 0.5,
-        'ent_loss_coef': 0.01,
+        'buffer_size': 1024,
+        'loss_val_coef': 0.5,
+        'loss_entr_coef': 0.01,
         'seed': seed,
-        'use_tensorboard': False,
+        'reward_norm_epsilon': 1e-8,
+        'intrinsic_reward_scale': 0.0,
+        'icm_loss_weight': None,
     }
-    agent = PPOAgent(model_net, settings, seed=seed)
+    
+    # Create optimizer and scheduler
+    param_groups = [{'params': model_net.parameters(), 'lr': learning_rate}]
+    optimizer, scheduler = create_optimizer_and_lr_scheduler(
+        param_groups, 
+        weight_decay=1e-5
+    )
+    
+    # Create PPO agent
+    agent = PPOAgent(model_net, settings, optimizer, scheduler, start_iteration=0)
     
     start_time = time.time()
     agent.train(env, iterations=iterations)
@@ -116,8 +135,8 @@ def test_sb3_ppo(env_name, seed, total_timesteps=10240):
         env,
         norm_obs=False,
         norm_reward=True, # Only normalize rewards
-        clip_obs=np.inf, # No clipping
-        clip_reward=np.inf, # No clipping
+        clip_obs=np.inf,
+        clip_reward=np.inf,
     )
     
 
@@ -153,25 +172,31 @@ def test_sb3_ppo(env_name, seed, total_timesteps=10240):
     model.learn(total_timesteps=total_timesteps)
     training_time = time.time() - start_time
     
-    # Evaluate
-    env.norm_reward = False  # Disable reward normalization for evaluation
+    # Evaluate on fresh environment without normalization
+    eval_env = gym.make(env_name)
     eval_returns = []
+    
     for episode in range(10):
-        obs = env.reset()
+        obs, _ = eval_env.reset(seed=seed + 1000 * episode)
         episode_return = 0
         done = False
+        terminated = False
+        truncated = False
         
-        while not done:
-            action, _ = model.predict(obs, deterministic=True)
-            obs, reward, done, info = env.step(action)
-            episode_return += reward[0]
-            done = done[0]
+        while not (terminated or truncated):
+            # VecEnv expects batched observations, but eval_env is not vectorized
+            # We need to add batch dimension for the model
+            obs_batch = np.expand_dims(obs, axis=0)
+            action, _ = model.predict(obs_batch, deterministic=True)
+            obs, reward, terminated, truncated, info = eval_env.step(action[0])
+            episode_return += reward
         
         eval_returns.append(episode_return)
     
     mean_return = np.mean(eval_returns)
     std_return = np.std(eval_returns)
     
+    eval_env.close()
     env.close()
     return mean_return, std_return, training_time
 
@@ -188,31 +213,23 @@ def run_comparison(env_name, seeds, custom_iterations=10, sb3_timesteps=10240):
         try:
             custom_mean, custom_std, custom_time = test_custom_ppo(env_name, seed, custom_iterations)
             sb3_mean, sb3_std, sb3_time = test_sb3_ppo(env_name, seed, sb3_timesteps)
-
-            writer.add_scalars(f'{env_name}/mean_returns', {
-                'Custom_PPO': custom_mean,
-                'SB3_PPO': sb3_mean
-            }, i)
-            writer.add_scalars(f'{env_name}/mean_stds', {
-                'Custom_PPO': custom_std,
-                'SB3_PPO': sb3_std
-            }, i)
-            writer.add_scalars(f'{env_name}/mean_times', {
-                'Custom_PPO': custom_time,
-                'SB3_PPO': sb3_time
-            }, i)
             
+            # Store results for table logging later
             custom_results.append({
                 'mean': custom_mean,
                 'std': custom_std,
-                'time': custom_time
+                'time': custom_time,
+                'seed': seed
             })
             
             sb3_results.append({
                 'mean': sb3_mean,
                 'std': sb3_std,
-                'time': sb3_time
+                'time': sb3_time,
+                'seed': seed
             })
+            
+            print(f"Custom: {custom_mean:.1f} +- {custom_std:.1f}, SB3: {sb3_mean:.1f} +- {sb3_std:.1f}")
             
         except Exception as e:
             print(f"Error: {str(e)}")
@@ -245,19 +262,29 @@ def run_comparison(env_name, seeds, custom_iterations=10, sb3_timesteps=10240):
     print(f"  Custom PPO: {custom_mean_of_means:.1f} +- {custom_std_of_means:.1f} (eval_std: {custom_mean_of_stds:.1f}, time: {custom_mean_time:.1f}s)")
     print(f"  SB3 PPO:    {sb3_mean_of_means:.1f} +- {sb3_std_of_means:.1f} (eval_std: {sb3_mean_of_stds:.1f}, time: {sb3_mean_time:.1f}s)")
     
-    writer.add_scalars(f'{env_name}/mean_returns/all_runs', {
-        'Custom_PPO': custom_mean_of_means,
-        'SB3_PPO': sb3_mean_of_means
-    }, 0)
-    writer.add_scalars(f'{env_name}/mean_stds/all_runs', {
-        'Custom_PPO': custom_std_of_means,
-        'SB3_PPO': sb3_std_of_means
-    }, 0)
-    writer.add_scalars(f'{env_name}/mean_times/all_runs', {
-        'Custom_PPO': custom_mean_time,
-        'SB3_PPO': sb3_mean_time
-    }, 0)
-    writer.close()
+    # Create detailed WandB table for per-seed results
+    table_data = []
+    for custom_r, sb3_r in zip(custom_results, sb3_results):
+        table_data.append([
+            custom_r['seed'],
+            custom_r['mean'],
+            custom_r['std'],
+            custom_r['time'],
+            sb3_r['mean'],
+            sb3_r['std'],
+            sb3_r['time'],
+            custom_r['mean'] - sb3_r['mean'],
+            'Custom' if custom_r['mean'] > sb3_r['mean'] else ('SB3' if custom_r['mean'] < sb3_r['mean'] else 'Tie'),
+            custom_r['time'] / sb3_r['time']
+        ])
+    
+    table = wandb.Table(
+        columns=["Seed", "Custom Mean", "Custom Std", "Custom Time (s)", 
+                 "SB3 Mean", "SB3 Std", "SB3 Time (s)", 
+                 "Return Diff", "Winner", "Time Ratio"],
+        data=table_data
+    )
+    wandb.log({f"{env_name}_detailed_results": table})
 
     return {
         'env_name': env_name,
@@ -271,7 +298,9 @@ def run_comparison(env_name, seeds, custom_iterations=10, sb3_timesteps=10240):
         'sb3_mean_time': sb3_mean_time,
         'performance_winner': 'custom' if custom_mean_of_means > sb3_mean_of_means else 'sb3' if sb3_mean_of_means > custom_mean_of_means else 'tie',
         'speed_ratio': custom_mean_time / sb3_mean_time,
-        'n_runs': len(custom_results)
+        'n_runs': len(custom_results),
+        'custom_results': custom_results,
+        'sb3_results': sb3_results
     }
 
 def main():
@@ -280,17 +309,32 @@ def main():
     print("=" * 60)
     
     # Configuration
-    seeds = range(20)
-    custom_iterations = [10, 10]
-    sb3_timesteps = [10240, 10240] # 10 * 1024 to match custom PPO
+    seeds = range(10)
+    custom_iterations = [15, 15]
+    sb3_timesteps = [15 * 1024, 15 * 1024] # 15 * 1024 to match custom PPO
     
     environments = ["CartPole-v1", "Acrobot-v1"]
 
     print(f"Environments to test: {environments}")
-    print(f"Seeds: {seeds}")
-
+    print(f"Seeds: {list(seeds)}")
     print(f"Config: {custom_iterations} iterations vs {sb3_timesteps} timesteps")
-    print(f"Tensorboard logs saved to: {log_dir}")
+    
+    # Initialize WandB
+    run_name = f"ppo_comparison_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    wandb.init(
+        project="ppo-sb3-custom-comparison",
+        name=run_name,
+        config={
+            "environments": environments,
+            "seeds": list(seeds),
+            "custom_iterations": custom_iterations,
+            "sb3_timesteps": sb3_timesteps,
+            "num_seeds": len(list(seeds)),
+        },
+        tags=["comparison", "ppo", "stable-baselines3", "custom"]
+    )
+    
+    print(f"WandB run initialized: {run_name}")
     
     # Run comparisons
     all_results = []
@@ -302,6 +346,7 @@ def main():
     
     if not all_results:
         print("\nNo successful comparisons completed")
+        wandb.finish()
         return
     
     # Summary statistics
@@ -316,13 +361,59 @@ def main():
     print(f"{'Environment':<15} {'Custom (mean +- std)':<20} {'SB3 (mean +- std)':<20} {'Speed':<10} {'Runs':<5}")
     print(f"{'-'*100}")
     
+    # Create overall summary table for WandB
+    summary_table_data = []
+    
     for result in all_results:
-        
-        custom_str = f"{result['custom_mean_of_means']:.1f}+-{result['custom_std_of_means']:.1f}"
-        sb3_str = f"{result['sb3_mean_of_means']:.1f}+-{result['sb3_std_of_means']:.1f}"
+        custom_str = f"{result['custom_mean_of_means']:.1f} +- {result['custom_std_of_means']:.1f}"
+        sb3_str = f"{result['sb3_mean_of_means']:.1f} +- {result['sb3_std_of_means']:.1f}"
         speed_str = f"{result['speed_ratio']:.1f}x"
         
         print(f"{result['env_name']:<15} {custom_str:<20} {sb3_str:<20} {speed_str:<10} {result['n_runs']:<5}")
+        
+        # Add to WandB summary table
+        summary_table_data.append([
+            result['env_name'],
+            result['custom_mean_of_means'],
+            result['custom_std_of_means'],
+            result['custom_mean_time'],
+            result['sb3_mean_of_means'],
+            result['sb3_std_of_means'],
+            result['sb3_mean_time'],
+            result['custom_mean_of_means'] - result['sb3_mean_of_means'],
+            result['performance_winner'],
+            result['speed_ratio'],
+            result['n_runs']
+        ])
+    
+    # Log overall summary table to WandB
+    summary_table = wandb.Table(
+        columns=["Environment", "Custom Mean", "Custom Std", "Custom Time (s)",
+                 "SB3 Mean", "SB3 Std", "SB3 Time (s)",
+                 "Mean Diff", "Winner", "Speed Ratio", "Num Seeds"],
+        data=summary_table_data
+    )
+    wandb.log({"overall_summary": summary_table})
+    
+    # Log summary metrics
+    custom_wins = sum(1 for r in all_results if r['performance_winner'] == 'custom')
+    sb3_wins = sum(1 for r in all_results if r['performance_winner'] == 'sb3')
+    ties = sum(1 for r in all_results if r['performance_winner'] == 'tie')
+    
+    wandb.summary['total_environments'] = len(all_results)
+    wandb.summary['custom_wins'] = custom_wins
+    wandb.summary['sb3_wins'] = sb3_wins
+    wandb.summary['ties'] = ties
+    wandb.summary['avg_speed_ratio'] = np.mean([r['speed_ratio'] for r in all_results])
+    
+    print(f"\n{'='*60}")
+    print(f"Overall: Custom wins: {custom_wins}, SB3 wins: {sb3_wins}, Ties: {ties}")
+    print(f"Average speed ratio: {np.mean([r['speed_ratio'] for r in all_results]):.2f}x")
+    print(f"{'='*60}")
+    
+    # Close WandB run
+    print(f"\nResults logged to WandB: {wandb.run.url if wandb.run else 'N/A'}")
+    wandb.finish()
 
 if __name__ == "__main__":
     main() 

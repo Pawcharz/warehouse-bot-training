@@ -25,6 +25,7 @@ from pathlib import Path
 # Environment imports
 from mlagents_envs.side_channel.engine_configuration_channel import EngineConfigurationChannel
 from mlagents_envs.environment import UnityEnvironment
+from mlagents_envs.side_channel.environment_parameters_channel import EnvironmentParametersChannel
 
 # Add root directory to path to find config module
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -41,7 +42,7 @@ def make_env(env_path=None, time_scale=1, no_graphics=True, verbose=True, env_ty
     Args:
         env_path: Path to the Unity environment .exe file
         time_scale: time scale of simulation
-        no_graphics: if graphics should be rendered
+        no_graphics: if graphics should be rendered - Unity handles seeding differently if graphics are rendered - results will be constand withing these groups (with/without graphics)
         verbose: if True, log to console
         env_type: type of environment to create (vector or multimodal for simple vector or camera+vector observations)
         seed: random seed for the Unity environment
@@ -57,10 +58,11 @@ def make_env(env_path=None, time_scale=1, no_graphics=True, verbose=True, env_ty
         print(f"Using Unity environment seed: {seed}")
     
     channel = EngineConfigurationChannel()
+    env_params_channel = EnvironmentParametersChannel()
     
     unity_env = UnityEnvironment(
         file_name=env_path,
-        side_channels=[channel],
+        side_channels=[channel, env_params_channel],
         no_graphics=no_graphics,
         seed=seed
     )
@@ -71,6 +73,7 @@ def make_env(env_path=None, time_scale=1, no_graphics=True, verbose=True, env_ty
         quality_level=0,
         target_frame_rate=60
     )
+    env_params_channel.set_float_parameter("seed", float(seed))
     
     # Choose appropriate wrapper based on env_type
     if env_type == "vector":

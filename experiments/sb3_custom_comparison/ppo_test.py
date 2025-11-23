@@ -18,7 +18,7 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 root_dir = os.path.dirname(os.path.dirname(current_dir))
 sys.path.insert(0, root_dir)
 
-from src.algorithms.PPO_algorithm import PPOAgent
+from src.algorithms.PPO_algorithm import PPOAgent, create_optimizer_and_lr_scheduler
 from src.models.actor_critic import ActorCritic
 from src.models.model_utils import count_parameters
 import random
@@ -26,6 +26,9 @@ import random
 def evaluate_policy(agent, env, num_episodes=10, seed=0):
     """Evaluate the trained policy"""
     returns = []
+    
+    # Put model in eval mode
+    agent.model.eval()
     
     for episode in range(num_episodes):
         # Seed the environment for reproducible evaluation
@@ -35,8 +38,12 @@ def evaluate_policy(agent, env, num_episodes=10, seed=0):
         truncated = False
         
         while not (done or truncated):
-            # Convert observation to tensor
-            obs_tensor = th.tensor(obs, dtype=th.float32, device=agent.device).unsqueeze(0)
+            # Convert observation to tensor (handle both dict and vector observations)
+            if isinstance(obs, dict):
+                obs_tensor = {key: th.tensor(obs[key], dtype=th.float32, device=agent.device) 
+                             for key in obs.keys()}
+            else:
+                obs_tensor = th.tensor(obs, dtype=th.float32, device=agent.device)
             
             # Get action from policy
             with th.no_grad():
@@ -78,32 +85,44 @@ def main():
     th.backends.cudnn.deterministic = True
     th.backends.cudnn.benchmark = False
     
-    # Create model after setting seeds
-    model_net = ActorCritic(obs_dim, act_dim)
+    # Create model after setting seeds and move to device
+    model_net = ActorCritic(obs_dim, act_dim, device=device)
     
     # Count and display parameters
     model_params = count_parameters(model_net)
     print(f"Model parameters: {model_params}")
     print(f"Total parameters: {model_params['total']}")
     
-    # PPO settings
+    # PPO settings (aligned with PPOAgent requirements)
+    learning_rate = 3e-4
     settings = {
         'device': device,
-        'lr': 3e-4,
         'gamma': 0.99,
-        'lambda': 0.95,
+        'gae_lambda': 0.95,
         'clip_eps': 0.2,
+        'value_clip_eps': 0.2,
         'max_grad_norm': 0.5,
-        'ppo_epochs': 4,
+        'epochs': 4,
         'batch_size': 64,
-        'update_timesteps': 1024,
-        'val_loss_coef': 0.5,
-        'ent_loss_coef': 0.01,
-        'seed': seed
+        'buffer_size': 1024,
+        'loss_val_coef': 0.5,
+        'loss_entr_coef': 0.01,
+        'seed': seed,
+        'heatmap_logging_freq': 10,
+        'reward_norm_epsilon': 1e-8,
+        'intrinsic_reward_scale': 0.0,  # No ICM in basic test
+        'icm_loss_weight': None,  # No ICM in basic test
     }
     
-    # Create PPO agent with seed
-    agent = PPOAgent(model_net, settings, seed=seed)
+    # Create optimizer and scheduler
+    param_groups = [{'params': model_net.parameters(), 'lr': learning_rate}]
+    optimizer, scheduler = create_optimizer_and_lr_scheduler(
+        param_groups, 
+        weight_decay=1e-5
+    )
+    
+    # Create PPO agent
+    agent = PPOAgent(model_net, settings, optimizer, scheduler, start_iteration=0)
     
     # Training
     print("\nStarting training...")

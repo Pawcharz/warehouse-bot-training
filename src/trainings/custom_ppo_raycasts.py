@@ -7,12 +7,13 @@ Based on the ppo_raw.ipynb notebook structure.
 """
 
 import warnings
+
+import wandb
 warnings.filterwarnings("ignore")
 
 import time
 import torch as th
 import numpy as np
-import random
 import os
 import sys
 
@@ -90,16 +91,18 @@ def main():
     # PPO settings
     settings = {
         'gamma': 0.99,
-        'lambda': 0.95,
+        'gae_lambda': 0.95,
         'clip_eps': 0.2,
-        'ppo_epochs': 4,
+        'epochs': 4,
         'batch_size': 128,
-        'update_timesteps': 2048,
+        'buffer_size': 2048,
         'lr': 3e-4,
-        'val_loss_coef': 0.5,
-        'ent_loss_coef': 0.01,
+        'loss_val_coef': 0.5,
+        'loss_entr_coef': 0.01,
         'device': device,
         'seed': seed,
+        'eval_freq': 50,  # Evaluate every 50 iterations
+        'eval_episodes': 10,  # Run 10 episodes for evaluation
         'experiment_name': f'ppo_seed_{seed}',
         'experiment_notes': 'Stage1 Find Deliver with raycasts'
     }
@@ -137,15 +140,26 @@ def main():
     
     # Evaluation
     print("\nEvaluating trained policy...")
-    mean_return, std_return, mean_steps, std_steps = evaluate_policy(
-        agent.model, env, device, num_episodes=10, seed=seed
+    mean_return, std_return, mean_steps, std_steps, ep_returns, ep_steps = evaluate_policy(
+        agent.model, env, device, num_episodes=100, seed=seed, obs_type="multimodal"
     )
     
+    # Logging evaluation results
     print(f"\n=== TRAINING RESULTS ===")
-    print(f"Training iterations: {training_iterations}")
-    print(f"Training time: {training_time:.2f} seconds")
-    print(f"Mean evaluation return: {mean_return:.2f} +- {std_return:.2f}")
-    print(f"Mean evaluation steps: {mean_steps:.2f} +- {std_steps:.2f}")
+    print(f"Training time: {training_time:.2f}s | Mean return: {mean_return:.2f} +- {std_return:.2f}")
+        
+    wandb.log({
+        "eval/mean_return": mean_return,
+        "eval/std_return": std_return,
+        "eval/mean_steps": mean_steps,
+        "eval/std_steps": std_steps,
+        "training/time_sec": training_time
+    })
+
+    eval_table = wandb.Table(columns=["episode", "return", "steps"])
+    for i, (ret, steps) in enumerate(zip(ep_returns, ep_steps)):
+        eval_table.add_data(i, ret, steps)
+    wandb.log({"evaluation_results": eval_table})
     
     # Save model (optional)
     try:

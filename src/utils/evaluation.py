@@ -71,9 +71,9 @@ def evaluate_policy(model, env, device: th.device, num_episodes: int = 10, seed:
     
     if verbose:
         print(f"\nEvaluation Results:")
-        print(f"Mean return: {mean_return:.2f} ± {std_return:.2f}")
-        print(f"Mean steps: {mean_steps:.2f} ± {std_steps:.2f}")
+        print(f"Mean return: {mean_return:.2f} +- {std_return:.2f}")
+        print(f"Mean steps: {mean_steps:.2f} +- {std_steps:.2f}")
         print(f"Best episode: {max(returns):.2f}")
         print(f"Worst episode: {min(returns):.2f}")
     
-    return mean_return, std_return, mean_steps, std_steps
+    return mean_return, std_return, mean_steps, std_steps, returns, steps
