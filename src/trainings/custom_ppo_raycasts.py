@@ -140,7 +140,7 @@ def main():
     
     # Evaluation
     print("\nEvaluating trained policy...")
-    mean_return, std_return, mean_steps, std_steps, ep_returns, ep_steps = evaluate_policy(
+    mean_return, std_return, mean_steps, std_steps, ep_returns, ep_steps, eval_outcomes = evaluate_policy(
         agent.model, env, device, num_episodes=100, seed=seed, obs_type="multimodal"
     )
     

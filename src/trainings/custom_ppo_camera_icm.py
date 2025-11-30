@@ -108,6 +108,7 @@ def main():
             'seed': seed,
             'eval_freq': 25,  # Evaluate every 25 iterations
             'eval_episodes': 10,  # Run 10 episodes for evaluation
+            'eval_env_type': 'find',  # Use find outcome categorization
             'experiment_name': f'icm_module_test_small_env_with_textures_stackedObs_x5',
             'experiment_notes': 'ppo with 120deg camera with rewards: [0, 20, 100] with task of only finding 2 items and ICM module on environment with more complex textures and obstacles',
         }
@@ -162,7 +163,7 @@ def main():
         
         # Evaluation
         print("\nEvaluating trained policy...")
-        mean_return, std_return, mean_steps, std_steps, ep_returns, ep_steps = evaluate_policy(
+        mean_return, std_return, mean_steps, std_steps, ep_returns, ep_steps, eval_outcomes = evaluate_policy(
             agent.model, env, device, num_episodes=100, seed=seed, obs_type="multimodal"
         )
         

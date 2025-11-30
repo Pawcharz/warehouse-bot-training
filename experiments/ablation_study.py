@@ -84,6 +84,7 @@ def train_config(config_name, config, env_path, iterations=300, seed=0):
             # Evaluation
             'eval_freq': 25,
             'eval_episodes': 100,
+            'eval_env_type': 'find',  # Use find outcome categorization
             
             # WandB - separate project for ablation
             'wandb_project': 'warehouse-bot-ablation',
@@ -124,7 +125,7 @@ def train_config(config_name, config, env_path, iterations=300, seed=0):
         
         # Final evaluation
         print("\nFinal evaluation...")
-        eval_mean, eval_std, _, _, _, _ = evaluate_policy(
+        eval_mean, eval_std, _, _, _, _, _ = evaluate_policy(
             model, env, device, num_episodes=100, seed=seed, obs_type="multimodal", verbose=False
         )
         

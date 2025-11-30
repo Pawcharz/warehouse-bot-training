@@ -5,8 +5,97 @@ Evaluation utilities for trained policies
 
 import torch as th
 import numpy as np
-from typing import Tuple
+from typing import Tuple, Dict, Callable, Optional
 
+
+# ============================================================================
+# Outcome Categorization Strategies
+# ============================================================================
+
+class OutcomeCategorizer:
+    """Base class for categorizing episode outcomes based on returns and termination type."""
+    
+    def categorize(self, episode_return: float, terminated: bool, truncated: bool) -> str:
+        """
+        Categorize an episode outcome.
+        
+        Args:
+            episode_return: Total episode return
+            terminated: Whether episode ended naturally (success/failure)
+            truncated: Whether episode was truncated (timeout)
+        
+        Returns:
+            Outcome category: 'success', 'timeout', 'wall_hit', or 'wrong_item'
+        """
+        raise NotImplementedError
+
+
+class FindItemCategorizer(OutcomeCategorizer):
+    """
+    Categorizer for Find Item tasks.
+    Reward structure: 0 (timeout/wall), 20 (any item), 100 (correct item)
+    """
+    
+    def categorize(self, episode_return: float, terminated: bool, truncated: bool) -> str:
+        if truncated:
+            return 'timeout'
+        elif terminated:
+            if episode_return >= 100:
+                return 'success'  # Found correct item
+            elif episode_return >= 15:
+                return 'wrong_item'  # Found wrong item (reward ~20)
+            else:
+                return 'wall_hit'  # Hit wall or timeout with 0 reward
+        return 'timeout'  # Fallback
+
+
+class FindDeliverCategorizer(OutcomeCategorizer):
+    """
+    Categorizer for Find & Deliver tasks.
+    Reward structure: 0 (timeout/wall), 20 (any item found), 100 (correct item), 200 (delivered)
+    """
+    
+    def categorize(self, episode_return: float, terminated: bool, truncated: bool) -> str:
+        if truncated:
+            return 'timeout'
+        elif terminated:
+            if episode_return >= 180:
+                return 'success'  # Successfully delivered (100 + 100 or 20*2 + 100 + 100)
+            elif episode_return >= 90:
+                return 'wrong_item'  # Found correct item(s) but didn't deliver (100 or 20+100)
+            elif episode_return >= 15:
+                return 'wrong_item'  # Found some item(s) but didn't complete (20 or 40)
+            else:
+                return 'wall_hit'  # Hit wall or timeout with 0 reward
+        return 'timeout'  # Fallback
+
+
+# Registry of categorizers by environment type
+OUTCOME_CATEGORIZERS: Dict[str, OutcomeCategorizer] = {
+    'find': FindItemCategorizer(),
+    'find_deliver': FindDeliverCategorizer(),
+}
+
+
+def get_outcome_categorizer(env_type: str = 'find') -> OutcomeCategorizer:
+    """
+    Get the appropriate outcome categorizer for an environment type.
+    
+    Args:
+        env_type: Type of environment ('find' or 'find_deliver')
+    
+    Returns:
+        OutcomeCategorizer instance
+    """
+    if env_type not in OUTCOME_CATEGORIZERS:
+        available = ', '.join(OUTCOME_CATEGORIZERS.keys())
+        raise ValueError(f"Unknown env_type '{env_type}'. Available: {available}")
+    return OUTCOME_CATEGORIZERS[env_type]
+
+
+# ============================================================================
+# Evaluation Functions
+# ============================================================================
 
 def prepare_observation(obs, device: th.device, obs_type: str = "vector"):
     """
@@ -33,12 +122,51 @@ def prepare_observation(obs, device: th.device, obs_type: str = "vector"):
 
 
 def evaluate_policy(model, env, device: th.device, num_episodes: int = 10, seed: int = 0, 
-                   obs_type: str = "auto", verbose: bool = True) -> Tuple[float, float, float, float]:
+                   obs_type: str = "auto", verbose: bool = True, 
+                   outcome_categorizer: Optional[OutcomeCategorizer] = None,
+                   env_type: str = 'find'):
+    """
+    Evaluate a policy on the environment.
+    
+    Args:
+        model: The policy model to evaluate
+        env: The environment
+        device: Torch device
+        num_episodes: Number of evaluation episodes
+        seed: Random seed
+        obs_type: Observation type ('auto', 'multimodal', 'vector')
+        verbose: Whether to print progress
+        outcome_categorizer: Custom outcome categorizer (if None, uses env_type)
+        env_type: Environment type for outcome categorization ('find' or 'find_deliver')
+                 Only used if outcome_categorizer is None
+    
+    Returns:
+        Tuple containing:
+        - mean_return: Mean episode return
+        - std_return: Std of episode returns
+        - mean_steps: Mean episode steps
+        - std_steps: Std of episode steps
+        - returns: List of episode returns
+        - steps: List of episode steps
+        - outcomes: Dict with outcome counts and details
+    """
+    # Get outcome categorizer
+    if outcome_categorizer is None:
+        outcome_categorizer = get_outcome_categorizer(env_type)
+    
     returns = []
     steps = []
+    outcomes = {
+        'success': 0,           # Successfully completed task
+        'timeout': 0,           # Truncated (max steps)
+        'wall_hit': 0,          # Hit wall or failed with 0 reward
+        'wrong_item': 0,        # Partial success (found item but not delivered, or wrong item)
+        'details': []           # Per-episode details: (return, steps, terminated, truncated)
+    }
     
     if verbose:
         print(f"Evaluating policy for {num_episodes} episodes...")
+        print(f"Using outcome categorizer: {outcome_categorizer.__class__.__name__}")
     
     for episode in range(num_episodes):
         obs, _ = env.reset()
@@ -61,8 +189,20 @@ def evaluate_policy(model, env, device: th.device, num_episodes: int = 10, seed:
         returns.append(episode_return)
         steps.append(episode_steps)
         
+        # Categorize episode outcome using the categorizer
+        outcome_category = outcome_categorizer.categorize(episode_return, done, truncated)
+        outcomes[outcome_category] += 1
+        
+        outcomes['details'].append({
+            'return': episode_return,
+            'steps': episode_steps,
+            'terminated': done,
+            'truncated': truncated,
+            'outcome': outcome_category
+        })
+        
         if verbose:
-            print(f"Episode {episode + 1}: Return = {episode_return:.2f}, Steps = {episode_steps}")
+            print(f"Episode {episode + 1}: Return = {episode_return:.2f}, Steps = {episode_steps}, Outcome = {outcome_category}")
     
     mean_return = np.mean(returns)
     std_return = np.std(returns)
@@ -75,5 +215,10 @@ def evaluate_policy(model, env, device: th.device, num_episodes: int = 10, seed:
         print(f"Mean steps: {mean_steps:.2f} +- {std_steps:.2f}")
         print(f"Best episode: {max(returns):.2f}")
         print(f"Worst episode: {min(returns):.2f}")
+        print(f"\nOutcome Distribution:")
+        print(f"  Success: {outcomes['success']} ({outcomes['success']/num_episodes*100:.1f}%)")
+        print(f"  Timeout: {outcomes['timeout']} ({outcomes['timeout']/num_episodes*100:.1f}%)")
+        print(f"  Wall Hit: {outcomes['wall_hit']} ({outcomes['wall_hit']/num_episodes*100:.1f}%)")
+        print(f"  Wrong Item: {outcomes['wrong_item']} ({outcomes['wrong_item']/num_episodes*100:.1f}%)")
     
-    return mean_return, std_return, mean_steps, std_steps, returns, steps
+    return mean_return, std_return, mean_steps, std_steps, returns, steps, outcomes

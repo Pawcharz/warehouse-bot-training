@@ -105,6 +105,7 @@ def main():
             'heatmap_logging_freq': 25,
             'eval_freq': 25,  # Evaluate every 25 iterations
             'eval_episodes': 100,  # Run 10 episodes for evaluation
+            'eval_env_type': 'find_deliver',  # Use find_deliver outcome categorization
             'experiment_name': f'ppo_camera_120deg_0_20_100_find_2_items_deliver_from_pretrained_0_seed_0',
             'experiment_notes': 'PPO delivery training with 120deg camera, rewards: [0, 20, 100, 100], find and deliver item task with 2 items',
         }
@@ -169,7 +170,7 @@ def main():
         
         # Evaluation
         print("\nEvaluating trained policy...")
-        mean_return, std_return, mean_steps, std_steps, ep_returns, ep_steps = evaluate_policy(
+        mean_return, std_return, mean_steps, std_steps, ep_returns, ep_steps, eval_outcomes = evaluate_policy(
             agent.model, env, device, num_episodes=100, seed=seed, obs_type="multimodal"
         )
         
