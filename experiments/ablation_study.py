@@ -167,7 +167,7 @@ def main():
     # Train all configs
     start = time.time()
     for name, config in CONFIGS.items():
-        train_config(name, config, env_path, iterations=5, seed=0)
+        train_config(name, config, env_path, iterations=300, seed=0)
     
     total_time = (time.time() - start) / 60
     print(f"\n{'='*80}")
