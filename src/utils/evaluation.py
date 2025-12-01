@@ -52,22 +52,44 @@ class FindItemCategorizer(OutcomeCategorizer):
 class FindDeliverCategorizer(OutcomeCategorizer):
     """
     Categorizer for Find & Deliver tasks.
-    Reward structure: 0 (timeout/wall), 20 (any item found), 100 (correct item), 200 (delivered)
+    Task: Find the correct item (out of 2) and deliver it to the deposit.
+    
+    Reward structure:
+    - 0 points: Wall hit OR timeout (step limit exceeded)
+    - 20 points: Wrong item gathered (episode ends immediately)
+    - 100 points: Correct item gathered
+    - 200 points: Correct item gathered + delivered to deposit (100 + 100)
+    
+    Episode ending scenarios:
+    1. Success (200, terminated): Agent gathered correct item and delivered it to deposit
+    2. Correct item not delivered (100, truncated): Agent gathered correct item but didn't deliver in time
+    3. Correct item then wall hit (100, terminated): Agent gathered correct item then hit wall
+    4. Wrong item gathered (20, terminated): Agent gathered wrong item - episode ends immediately
+    5. Wall hit (0, terminated): Agent hit wall before gathering any item
+    6. Timeout (0, truncated): Agent exceeded step limit without gathering any item
     """
     
     def categorize(self, episode_return: float, terminated: bool, truncated: bool) -> str:
+        # Timeout - exceeded step limit
         if truncated:
-            return 'timeout'
-        elif terminated:
-            if episode_return >= 180:
-                return 'success'  # Successfully delivered (100 + 100 or 20*2 + 100 + 100)
-            elif episode_return >= 90:
-                return 'wrong_item'  # Found correct item(s) but didn't deliver (100 or 20+100)
-            elif episode_return >= 15:
-                return 'wrong_item'  # Found some item(s) but didn't complete (20 or 40)
+            if episode_return >= 100:
+                return 'timeout_correct_item'  # Gathered correct item but didn't deliver in time
             else:
-                return 'wall_hit'  # Hit wall or timeout with 0 reward
-        return 'timeout'  # Fallback
+                return 'timeout_no_item'  # Exceeded step limit without gathering any item (0 points)
+        
+        # Terminated - episode ended by agent action or event
+        elif terminated:
+            if episode_return >= 200:
+                return 'correct_item_delivered'  # Correct item delivered to deposit (100 + 100)
+            elif episode_return >= 100:
+                return 'correct_item_wall_hit'  # Gathered correct item then hit wall
+            elif episode_return >= 20:
+                return 'wrong_item_gathered'  # Gathered wrong item - episode ends immediately
+            else:
+                return 'wall_hit_no_item'  # Hit wall before gathering any item
+        
+        # Fallback (shouldn't reach here)
+        return 'unknown'
 
 
 # Registry of categorizers by environment type
