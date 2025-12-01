@@ -138,7 +138,9 @@ def main():
         agent.train(env, iterations=training_iterations, early_stopping_fn=early_stop_fn)
         
         training_time = time.time() - start_time
+        actual_iterations = agent.iteration
         print(f"\nTraining completed in {training_time:.2f} seconds")
+        print(f"Completed {actual_iterations} iterations (target was {training_iterations})")
         
         # Evaluation
         print("\nEvaluating trained policy...")
@@ -155,7 +157,8 @@ def main():
             "eval/std_return": std_return,
             "eval/mean_steps": mean_steps,
             "eval/std_steps": std_steps,
-            "training/time_sec": training_time
+            "training/time_sec": training_time,
+            "training/actual_iterations": actual_iterations
         })
 
         eval_table = wandb.Table(columns=["episode", "return", "steps"])
@@ -165,8 +168,9 @@ def main():
         
         # Save model (optional)
         try:
-            save_dir = get_default_save_dir("custom", "ppo_camera_120deg_0_20_100_find_2_items_0_seed_0")
-            filename = create_model_filename("ppo_camera_120deg_0_20_100_find_2_items_train_0_seed_0", seed)
+            experiment_name = "ppo_camera_120deg_0_20_100_find_2_items_train_0"
+            save_dir = get_default_save_dir("custom", experiment_name)
+            filename = create_model_filename(experiment_name, seed)
             
             model_path = save_model_checkpoint(
                 model=agent.model,
@@ -175,7 +179,7 @@ def main():
                 filename=filename,
                 settings=settings,
                 seed=seed,
-                training_iterations=training_iterations,
+                training_iterations=actual_iterations,
                 final_mean_return=mean_return,
                 final_std_return=std_return
             )

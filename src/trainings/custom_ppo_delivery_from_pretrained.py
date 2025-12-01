@@ -115,7 +115,7 @@ def main():
         model_net = ActorCriticMultimodal(act_dim, visual_obs_size=obs_dim_visual, num_items=2, device=device)
         
         # Load pre-trained model
-        pretrained_model_path = "saved_models/custom/ppo_camera_120deg_0_20_100_find_2_items_train_0_seed_0/ppo_camera_120deg_0_20_100_find_2_items_train_0_seed_0.pth"
+        pretrained_model_path = "saved_models/custom/ppo_camera_120deg_0_20_100_find_2_items_0_seed_0/ppo_camera_120deg_0_20_100_find_2_items_0_seed_0.pth"
         print(f"\nLoading pre-trained model from: {pretrained_model_path}")
         
         if os.path.exists(pretrained_model_path):
@@ -126,9 +126,11 @@ def main():
                     device=device,
                     load_optimizer=False
                 )
+                pretrained_iterations = 150 # checkpoint.get('training_iterations', 0)
                 print(f"Successfully loaded pre-trained model")
-                print(f"Original model trained for {checkpoint.get('training_iterations', 'unknown')} iterations")
+                print(f"Original model trained for {pretrained_iterations} iterations")
                 print(f"Original final mean return: {checkpoint.get('final_mean_return', 'unknown')}")
+                print(f"Will continue training from iteration {pretrained_iterations}")
                 
             except Exception as e:
                 print(f"Warning: Could not load pre-trained model: {e}")
@@ -151,7 +153,6 @@ def main():
         
         # Create PPO agent with the loaded model
         print("\nCreating PPO agent for delivery training...")
-        pretrained_iterations = checkpoint.get('training_iterations', 0)
         agent = PPOAgent(model_net, settings, optimizer, scheduler, start_iteration=pretrained_iterations)
         
         # Training on delivery environment
@@ -166,12 +167,14 @@ def main():
         agent.train(env, iterations=training_iterations, early_stopping_fn=early_stop_fn)
         
         training_time = time.time() - start_time
+        actual_iterations = agent.iteration
         print(f"\nDelivery training completed in {training_time:.2f} seconds")
+        print(f"Completed {actual_iterations} total iterations (started from {pretrained_iterations}, ran {actual_iterations - pretrained_iterations} additional)")
         
         # Evaluation
         print("\nEvaluating trained policy...")
         mean_return, std_return, mean_steps, std_steps, ep_returns, ep_steps, eval_outcomes = evaluate_policy(
-            agent.model, env, device, num_episodes=100, seed=seed, obs_type="multimodal"
+            agent.model, env, device, num_episodes=100, seed=seed, obs_type="multimodal", env_type='find_deliver'
         )
         
         # Logging evaluation results
@@ -183,7 +186,9 @@ def main():
             "eval/std_return": std_return,
             "eval/mean_steps": mean_steps,
             "eval/std_steps": std_steps,
-            "training/time_sec": training_time
+            "training/time_sec": training_time,
+            "training/actual_iterations": actual_iterations,
+            "training/additional_iterations": actual_iterations - pretrained_iterations
         })
 
         eval_table = wandb.Table(columns=["episode", "return", "steps"])
@@ -193,8 +198,9 @@ def main():
         
         # Save delivery model with new name and path
         try:
-            save_dir = get_default_save_dir("custom", "ppo_camera_120deg_0_20_100_find_2_items_deliver_task_embedding_attempt_1")
-            filename = create_model_filename("ppo_camera_120deg_0_20_100_find_2_items_deliver_task_embedding_attempt_1", seed)
+            experiment_name = "ppo_camera_120deg_0_20_100_find_2_items_deliver_from_pretrained_0"
+            save_dir = get_default_save_dir("custom", experiment_name)
+            filename = create_model_filename(experiment_name, seed)
             
             model_path = save_model_checkpoint(
                 model=agent.model,
@@ -203,11 +209,13 @@ def main():
                 filename=filename,
                 settings=settings,
                 seed=seed,
-                training_iterations=training_iterations,
+                training_iterations=actual_iterations,
                 final_mean_return=mean_return,
                 final_std_return=std_return,
                 additional_info={
                     'pretrained_from': pretrained_model_path,
+                    'pretrained_iterations': pretrained_iterations,
+                    'additional_iterations': actual_iterations - pretrained_iterations,
                     'environment_type': 'delivery',
                     'task_description': 'find_and_deliver_2_items'
                 }
