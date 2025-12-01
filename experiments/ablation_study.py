@@ -85,6 +85,7 @@ def train_config(config_name, config, env_path, iterations=300, seed=0):
             'eval_freq': 25,
             'eval_episodes': 100,
             'eval_env_type': 'find',  # Use find outcome categorization
+            'eval_initial': True,  # Evaluate at iteration 0 (before training) for complete plot
             
             # WandB - separate project for ablation
             'wandb_project': 'warehouse-bot-ablation',

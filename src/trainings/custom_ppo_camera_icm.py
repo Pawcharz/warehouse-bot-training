@@ -109,6 +109,7 @@ def main():
             'eval_freq': 25,  # Evaluate every 25 iterations
             'eval_episodes': 10,  # Run 10 episodes for evaluation
             'eval_env_type': 'find',  # Use find outcome categorization
+            'eval_initial': True,  # Evaluate at iteration 0 (before training) for complete plot
             'experiment_name': f'icm_module_test_small_env_with_textures_stackedObs_x5',
             'experiment_notes': 'ppo with 120deg camera with rewards: [0, 20, 100] with task of only finding 2 items and ICM module on environment with more complex textures and obstacles',
         }

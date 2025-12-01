@@ -103,6 +103,7 @@ def main():
         'seed': seed,
         'eval_freq': 50,  # Evaluate every 50 iterations
         'eval_episodes': 10,  # Run 10 episodes for evaluation
+        'eval_initial': True,  # Evaluate at iteration 0 (before training) for complete plot
         'experiment_name': f'ppo_seed_{seed}',
         'experiment_notes': 'Stage1 Find Deliver with raycasts'
     }

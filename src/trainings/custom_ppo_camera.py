@@ -64,7 +64,7 @@ def main():
     # Create environment
     print("\nCreating environment...")
     env = make_env(time_scale=1, no_graphics=False, verbose=True, env_type="multimodal", env_path='environment_builds/stage2/S2_Find_2Items_64x36camera120deg_rew0_20_100/Warehouse_Bot.exe', seed=seed)
-
+    experiment_name = f"ppo_camera_120deg_0_20_100_find_2_items_train_1"
     try:
         print(env.observation_space)
         # Get environment dimensions
@@ -97,7 +97,8 @@ def main():
             'eval_freq': 25,  # Evaluate every 25 iterations
             'eval_episodes': 100,  # Run 10 episodes for evaluation
             'eval_env_type': 'find',  # Use find outcome categorization
-            'experiment_name': f'ppo_camera_120deg_0_20_100_find_2_items_train_0_seed_0',
+            'eval_initial': True,  # Evaluate at iteration 0 (before training) for complete plot
+            'experiment_name': experiment_name,
             'experiment_notes': 'ppo with 120deg camera with rewards: [0, 20, 100] with task of only finding 2 items.',
         }
         training_iterations = 300
@@ -168,7 +169,7 @@ def main():
         
         # Save model (optional)
         try:
-            experiment_name = "ppo_camera_120deg_0_20_100_find_2_items_train_0"
+            
             save_dir = get_default_save_dir("custom", experiment_name)
             filename = create_model_filename(experiment_name, seed)
             

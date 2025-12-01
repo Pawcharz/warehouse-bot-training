@@ -164,6 +164,7 @@ class PPOAgent:
     self.eval_freq = settings.get('eval_freq', None)  # Evaluate every K iterations (None = no evaluation during training)
     self.eval_episodes = settings.get('eval_episodes', 10)  # Number of episodes for evaluation
     self.eval_env_type = settings.get('eval_env_type', 'find')  # Environment type for outcome categorization ('find' or 'find_deliver')
+    self.eval_initial = settings.get('eval_initial', False)  # Whether to evaluate at iteration 0 (before training)
     
     # Wandb logger
     self.logger = None
@@ -337,6 +338,44 @@ class PPOAgent:
     
     start_iteration = self.iteration
     final_iteration = start_iteration + iterations - 1
+    
+    # Optional: Evaluate policy at the first iteration (before training starts)
+    if self.eval_initial and self.eval_freq is not None:
+      print(f"\n=== INITIAL EVALUATION AT ITERATION {start_iteration} (BEFORE TRAINING) ===")
+      eval_start = time.time()
+      
+      # Get a sample observation to determine type
+      sample_obs, _ = env.reset()
+      obs_type = "multimodal" if isinstance(sample_obs, dict) else "vector"
+      
+      # Run deterministic evaluation
+      eval_mean_return, eval_std_return, eval_mean_steps, eval_std_steps, eval_returns, eval_steps, eval_outcomes = evaluate_policy(
+        self.model, env, self.device, 
+        num_episodes=self.eval_episodes, 
+        seed=self.seed,
+        obs_type=obs_type,
+        verbose=False,
+        env_type=self.eval_env_type
+      )
+      
+      eval_time = time.time() - eval_start
+      
+      # Log evaluation metrics at start_iteration
+      eval_metrics = {
+        'mean_return': eval_mean_return,
+        'std_return': eval_std_return,
+        'mean_steps': eval_mean_steps,
+        'std_steps': eval_std_steps,
+        'time_taken': eval_time,
+        'num_episodes': self.eval_episodes,
+        'total_timesteps': self.total_timesteps
+      }
+      
+      if self.logger is not None:
+        self.logger.log_evaluation_metrics(start_iteration, eval_metrics)
+        self.logger.log_evaluation_outcomes(start_iteration, eval_outcomes, self.eval_episodes)
+      
+      print(f"Initial Evaluation: Mean return = {eval_mean_return:.2f} +- {eval_std_return:.2f}, Mean steps = {eval_mean_steps:.2f} +- {eval_std_steps:.2f}, Time = {eval_time:.2f}s")
     
     for i in range(start_iteration, start_iteration + iterations):
       self.iteration = i
