@@ -126,7 +126,7 @@ def main():
                     device=device,
                     load_optimizer=False
                 )
-                pretrained_iterations = 150 # checkpoint.get('training_iterations', 0)
+                pretrained_iterations = checkpoint.get('training_iterations', 0)
                 print(f"Successfully loaded pre-trained model")
                 print(f"Original model trained for {pretrained_iterations} iterations")
                 print(f"Original final mean return: {checkpoint.get('final_mean_return', 'unknown')}")
