@@ -171,37 +171,31 @@ class WandBLogger:
         
         Args:
             iteration: Current training iteration
-            outcomes: Dict with keys 'success', 'timeout', 'wall_hit', 'wrong_item'
+            outcomes: Dict with outcome categories as keys (dynamically determined) and 'details'
             num_episodes: Total number of evaluation episodes
         """
         if self.wandb_run is not None:
-            # Calculate percentages (should sum to 100%)
-            success_pct = (outcomes['success'] / num_episodes) * 100
-            timeout_pct = (outcomes['timeout'] / num_episodes) * 100
-            wall_hit_pct = (outcomes['wall_hit'] / num_episodes) * 100
-            wrong_item_pct = (outcomes['wrong_item'] / num_episodes) * 100
+            # Dynamically handle all outcome categories (except 'details')
+            log_dict = {}
+            table_data = []
             
-            # Log individual percentages - these can be manually combined in WandB UI
-            # into a stacked area chart by selecting all 4 metrics
-            log_dict = {
-                'eval_outcomes/success_pct': success_pct,
-                'eval_outcomes/timeout_pct': timeout_pct,
-                'eval_outcomes/wall_hit_pct': wall_hit_pct,
-                'eval_outcomes/wrong_item_pct': wrong_item_pct,
-            }
+            for outcome_name, count in outcomes.items():
+                if outcome_name != 'details':  # Skip the details list
+                    percentage = (count / num_episodes) * 100
+                    
+                    # Log individual percentages for plotting
+                    log_dict[f'eval_outcomes/{outcome_name}_pct'] = percentage
+                    
+                    # Add to table data
+                    table_data.append([iteration, outcome_name, count, percentage])
             
+            # Log all percentage metrics
             self.wandb_run.log(log_dict, step=iteration)
             
-            # Also log counts as a table for easy stacked visualization
-            # This table format can be used to create stacked bar charts in WandB
+            # Log counts as a table for stacked visualization
             outcomes_table = wandb.Table(
                 columns=['iteration', 'outcome_type', 'count', 'percentage'],
-                data=[
-                    [iteration, 'success', outcomes['success'], success_pct],
-                    [iteration, 'timeout', outcomes['timeout'], timeout_pct],
-                    [iteration, 'wall_hit', outcomes['wall_hit'], wall_hit_pct],
-                    [iteration, 'wrong_item', outcomes['wrong_item'], wrong_item_pct],
-                ]
+                data=table_data
             )
             self.wandb_run.log({'eval_outcomes/distribution': outcomes_table}, step=iteration)
             

@@ -103,11 +103,12 @@ def main():
             'device': device,
             'seed': seed,
             'heatmap_logging_freq': 25,
-            'eval_freq': 25,  # Evaluate every 25 iterations
-            'eval_episodes': 100,  # Run 10 episodes for evaluation
-            'eval_env_type': 'find_deliver',  # Use find_deliver outcome categorization
-            'experiment_name': f'ppo_camera_120deg_0_20_100_find_2_items_deliver_from_pretrained_0_seed_0',
-            'experiment_notes': 'PPO delivery training with 120deg camera, rewards: [0, 20, 100, 100], find and deliver item task with 2 items',
+            'eval_freq': 25,
+            'eval_episodes': 100,
+            'eval_env_type': 'find_deliver',
+            'eval_initial': True,
+            'experiment_name': f'ppo_camera_120deg_0_20_100_100_find_2_items_deliver_from_pretrained_1_seed_0',
+            'experiment_notes': 'PPO delivery training with 120deg camera, rewards: [0, 20, 100, 100], find and deliver item task with 2 items, starting from pretrained train_1 model',
         }
         training_iterations = 1000
         
@@ -115,7 +116,7 @@ def main():
         model_net = ActorCriticMultimodal(act_dim, visual_obs_size=obs_dim_visual, num_items=2, device=device)
         
         # Load pre-trained model
-        pretrained_model_path = "saved_models/custom/ppo_camera_120deg_0_20_100_find_2_items_0_seed_0/ppo_camera_120deg_0_20_100_find_2_items_0_seed_0.pth"
+        pretrained_model_path = "saved_models/custom/ppo_camera_120deg_0_20_100_find_2_items_train_1/ppo_camera_120deg_0_20_100_find_2_items_train_1_seed_0.pth"
         print(f"\nLoading pre-trained model from: {pretrained_model_path}")
         
         if os.path.exists(pretrained_model_path):
@@ -198,8 +199,9 @@ def main():
         
         # Save delivery model with new name and path
         try:
-            experiment_name = "ppo_camera_120deg_0_20_100_find_2_items_deliver_from_pretrained_0"
-            save_dir = get_default_save_dir("custom", experiment_name)
+            experiment_name = "ppo_camera_120deg_0_20_100_100_find_2_items_deliver_from_pretrained_1"
+            save_dir = os.path.join("saved_models", "custom", experiment_name)
+            os.makedirs(save_dir, exist_ok=True)
             filename = create_model_filename(experiment_name, seed)
             
             model_path = save_model_checkpoint(

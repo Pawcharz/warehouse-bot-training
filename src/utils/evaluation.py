@@ -28,6 +28,15 @@ class OutcomeCategorizer:
             Outcome category: 'success', 'timeout', 'wall_hit', or 'wrong_item'
         """
         raise NotImplementedError
+    
+    def get_all_categories(self):
+        """
+        Return all possible outcome categories for this categorizer.
+        
+        Returns:
+            List of all possible outcome category strings
+        """
+        raise NotImplementedError
 
 
 class FindItemCategorizer(OutcomeCategorizer):
@@ -47,6 +56,10 @@ class FindItemCategorizer(OutcomeCategorizer):
             else:
                 return 'wall_hit'  # Hit wall or timeout with 0 reward
         return 'timeout'  # Fallback
+    
+    def get_all_categories(self):
+        """Return all possible outcome categories for Find Item tasks."""
+        return ['success', 'wrong_item', 'wall_hit', 'timeout']
 
 
 class FindDeliverCategorizer(OutcomeCategorizer):
@@ -90,6 +103,18 @@ class FindDeliverCategorizer(OutcomeCategorizer):
         
         # Fallback (shouldn't reach here)
         return 'unknown'
+    
+    def get_all_categories(self):
+        """Return all possible outcome categories for Find & Deliver tasks."""
+        return [
+            'correct_item_delivered',
+            'timeout_correct_item',
+            'correct_item_wall_hit',
+            'wrong_item_gathered',
+            'wall_hit_no_item',
+            'timeout_no_item',
+            'unknown'
+        ]
 
 
 # Registry of categorizers by environment type
@@ -179,12 +204,12 @@ def evaluate_policy(model, env, device: th.device, num_episodes: int = 10, seed:
     returns = []
     steps = []
     outcomes = {
-        'success': 0,           # Successfully completed task
-        'timeout': 0,           # Truncated (max steps)
-        'wall_hit': 0,          # Hit wall or failed with 0 reward
-        'wrong_item': 0,        # Partial success (found item but not delivered, or wrong item)
         'details': []           # Per-episode details: (return, steps, terminated, truncated)
     }
+    
+    # Initialize all possible outcome categories to 0
+    for category in outcome_categorizer.get_all_categories():
+        outcomes[category] = 0
     
     if verbose:
         print(f"Evaluating policy for {num_episodes} episodes...")
@@ -213,6 +238,8 @@ def evaluate_policy(model, env, device: th.device, num_episodes: int = 10, seed:
         
         # Categorize episode outcome using the categorizer
         outcome_category = outcome_categorizer.categorize(episode_return, done, truncated)
+        
+        # Track outcome category
         outcomes[outcome_category] += 1
         
         outcomes['details'].append({
@@ -238,9 +265,9 @@ def evaluate_policy(model, env, device: th.device, num_episodes: int = 10, seed:
         print(f"Best episode: {max(returns):.2f}")
         print(f"Worst episode: {min(returns):.2f}")
         print(f"\nOutcome Distribution:")
-        print(f"  Success: {outcomes['success']} ({outcomes['success']/num_episodes*100:.1f}%)")
-        print(f"  Timeout: {outcomes['timeout']} ({outcomes['timeout']/num_episodes*100:.1f}%)")
-        print(f"  Wall Hit: {outcomes['wall_hit']} ({outcomes['wall_hit']/num_episodes*100:.1f}%)")
-        print(f"  Wrong Item: {outcomes['wrong_item']} ({outcomes['wrong_item']/num_episodes*100:.1f}%)")
+
+        for outcome_name, count in sorted(outcomes.items()):
+            if outcome_name != 'details':
+                print(f"  {outcome_name}: {count} ({count/num_episodes*100:.1f}%)")
     
     return mean_return, std_return, mean_steps, std_steps, returns, steps, outcomes
