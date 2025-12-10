@@ -110,8 +110,6 @@ def main():
         'seed': seed,
         'heatmap_logging_freq': 10,
         'reward_norm_epsilon': 1e-8,
-        'intrinsic_reward_scale': 0.0,  # No ICM in basic test
-        'icm_loss_weight': None,  # No ICM in basic test
     }
     
     # Create optimizer and scheduler

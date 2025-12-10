@@ -76,14 +76,11 @@ def make_env(env_path=None, time_scale=1, no_graphics=True, verbose=True, env_ty
     env_params_channel.set_float_parameter("seed", float(seed))
     
     # Choose appropriate wrapper based on env_type
-    if env_type == "vector":
-        from src.environments.env_vector_gymnasium_wrapper import UnityVectorGymWrapper
-        gymnasium_env = UnityVectorGymWrapper(unity_env)
-    elif env_type == "multimodal":
+    if env_type == "multimodal":
         from src.environments.env_multimodal_gymnasium_wrapper import UnityMultimodalGymWrapper
         gymnasium_env = UnityMultimodalGymWrapper(unity_env, add_previous_action=True)
     else:
-        raise ValueError(f"Unknown env_type: {env_type}. Must be one of: vector, multimodal")
+        raise ValueError(f"Unknown env_type: {env_type}. Currently only 'multimodal' is supported.")
     
     if verbose:
         print(f"Observation space: {gymnasium_env.observation_space}")

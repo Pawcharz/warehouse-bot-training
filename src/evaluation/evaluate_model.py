@@ -45,7 +45,7 @@ def main():
         no_graphics=False, 
         verbose=True,
         env_type="multimodal", 
-        env_path='environment_builds/stage3/S3_Find_2Items_Deliver_64x36camera120deg_room_big_1/Warehouse_Bot.exe',
+        env_path='environment_builds/stage2/S2_Find_2Items_Deliver_64x36camera120deg_rew0_20_100_100/Warehouse_Bot.exe',
         seed=seed
     )
 
@@ -66,7 +66,7 @@ def main():
         model_net = ActorCriticMultimodal(act_dim, visual_obs_size=obs_dim_visual, num_items=2, device=device)
         
         # Load model
-        pretrained_model_path = "saved_models/custom/ppo_camera_120deg_0_20_100_find_2_items_task_embedding_attempt_1/ppo_camera_120deg_0_20_100_find_2_items_task_embedding_attempt_1_seed_0.pth"
+        pretrained_model_path = "saved_models/custom/ppo_camera_120deg_0_20_100_find_2_items_deliver_task_0_seed_0/ppo_camera_120deg_0_20_100_find_2_items_deliver_task_0_seed_0.pth"
         print(f"\nLoading model from: {pretrained_model_path}")
         
         if os.path.exists(pretrained_model_path):

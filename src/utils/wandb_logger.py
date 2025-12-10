@@ -196,15 +196,13 @@ class WandBLogger:
             
             self.wandb_run.log(log_dict, step=iteration)
 
-    def log_console_training_summary(self, iteration, ep_returns: np.ndarray, time_taken, steps: np.ndarray, losses: dict, current_lrs, intrinsic_returns: np.ndarray = None):
+    def log_console_training_summary(self, iteration, ep_returns: np.ndarray, time_taken, steps: np.ndarray, losses: dict, current_lrs):
         """Log training summary to console."""
         
         mean_losses = {key: np.mean(losses[key]) for key in losses}
         
         print(f"\n=== Iteration {iteration} ===")
         print(f"Episodes: {len(ep_returns)}; Return: {ep_returns.mean():.2f} +- {ep_returns.std():.2f}; Steps: {steps.mean():.1f} +- {steps.std():.1f}; Time: {time_taken:.2f}s")
-        if intrinsic_returns is not None:
-            print(f"Intrinsic Returns: {intrinsic_returns.mean():.2f} +- {intrinsic_returns.std():.2f}")
         print(f"Losses: {', '.join([f'{name}: {loss:.4f}' for name, loss in mean_losses.items()])}")
         print(f"Learning Rates: {[f'{lr:.2e}' for lr in current_lrs]}")
     

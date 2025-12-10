@@ -114,7 +114,7 @@ def main():
         model_net = ActorCriticMultimodal(act_dim, visual_obs_size=obs_dim_visual, num_items=2, device=device)
         
         # Load pre-trained model
-        pretrained_model_path = "saved_models/custom/ppo_camera_120deg_0_20_100_find_2_items_train_0_seed_0/ppo_camera_120deg_0_20_100_find_2_items_train_0_seed_0.pth"
+        pretrained_model_path = "saved_models/custom/ppo_camera_120deg_0_20_100_find_2_items_0_seed_0/ppo_camera_120deg_0_20_100_find_2_items_0_seed_0.pth"
         print(f"\nLoading pre-trained model from: {pretrained_model_path}")
         
         if os.path.exists(pretrained_model_path):
@@ -192,8 +192,8 @@ def main():
         
         # Save delivery model with new name and path
         try:
-            save_dir = get_default_save_dir("custom", "ppo_camera_120deg_0_20_100_find_2_items_deliver_task_embedding_attempt_1")
-            filename = create_model_filename("ppo_camera_120deg_0_20_100_find_2_items_deliver_task_embedding_attempt_1", seed)
+            save_dir = get_default_save_dir("custom", "ppo_camera_120deg_0_20_100_find_2_items_deliver_task_0_seed_0")
+            filename = create_model_filename("ppo_camera_120deg_0_20_100_find_2_items_deliver_task_0_seed_0", seed)
             
             model_path = save_model_checkpoint(
                 model=agent.model,

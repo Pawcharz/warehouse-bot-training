@@ -100,8 +100,6 @@ def test_custom_ppo(env_name, seed, iterations=10):
         'loss_entr_coef': 0.01,
         'seed': seed,
         'reward_norm_epsilon': 1e-8,
-        'intrinsic_reward_scale': 0.0,
-        'icm_loss_weight': None,
     }
     
     # Create optimizer and scheduler
