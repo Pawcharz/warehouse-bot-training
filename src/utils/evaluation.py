@@ -1,35 +1,19 @@
-#!/usr/bin/env python3
-"""
-Evaluation utilities for trained policies
-"""
-
 import torch as th
 import numpy as np
 from typing import Tuple
 
 
 def prepare_observation(obs, device: th.device, obs_type: str = "vector"):
-    """
-    Prepare observation for model input based on observation type
-    """
     if obs_type == "auto":
-        if isinstance(obs, dict):
-            obs_type = "multimodal"
-        else:
-            obs_type = "vector"
+        obs_type = "multimodal" if isinstance(obs, dict) else "vector"
     
     if obs_type == "multimodal":
         return obs
     elif obs_type == "vector":
-        if isinstance(obs, th.Tensor):
-            obs_tensor = obs.to(device)
-        else:
-            obs_tensor = th.tensor(obs, dtype=th.float32, device=device)
-            
-        # FIX - is it needed?
+        obs_tensor = obs.to(device) if isinstance(obs, th.Tensor) else th.tensor(obs, dtype=th.float32, device=device)
         return obs_tensor.unsqueeze(0) if obs_tensor.dim() == 1 else obs_tensor
     else:
-        raise ValueError(f"Unknown observation type: {obs_type}. Use 'vector', 'multimodal', or 'auto'.")
+        raise ValueError(f"Unknown observation type: {obs_type}")
 
 
 def evaluate_policy(model, env, device: th.device, num_episodes: int = 10, seed: int = 0, 

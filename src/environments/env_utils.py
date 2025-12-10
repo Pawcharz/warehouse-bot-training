@@ -1,33 +1,9 @@
-#!/usr/bin/env python3
-"""
-Environment Utilities for Warehouse Bot
-
-This module provides a shared environment creation utility that can be used
-across training, inference, and evaluation scripts.
-
-Usage:
-    from src.environments.env_utils import make_env
-    
-    # For training (fast, no graphics)
-    env = make_env(time_scale=6, no_graphics=True, env_type="raycasts")
-    
-    # For inference (real-time, with graphics)
-    env = make_env(time_scale=1.0, no_graphics=False, env_type="raycasts")
-    
-    # For camera + raycasts environment
-    env = make_env(time_scale=1.0, no_graphics=False, env_type="multimodal")
-"""
-
 import os
 import sys
-from pathlib import Path
-
-# Environment imports
 from mlagents_envs.side_channel.engine_configuration_channel import EngineConfigurationChannel
 from mlagents_envs.environment import UnityEnvironment
 from mlagents_envs.side_channel.environment_parameters_channel import EnvironmentParametersChannel
 
-# Add root directory to path to find config module
 current_dir = os.path.dirname(os.path.abspath(__file__))
 root_dir = os.path.dirname(os.path.dirname(current_dir))
 if root_dir not in sys.path:
@@ -53,9 +29,8 @@ def make_env(env_path=None, time_scale=1, no_graphics=True, verbose=True, env_ty
         raise ValueError("env_path must be specified. Please provide the path to the Unity environment executable.")
     
     if verbose:
-        print(f"Looking for environment at: {env_path}")
-        print(f"File exists: {os.path.exists(env_path)}")
-        print(f"Using Unity environment seed: {seed}")
+        print(f"Environment: {env_path}")
+        print(f"Seed: {seed}")
     
     channel = EngineConfigurationChannel()
     env_params_channel = EnvironmentParametersChannel()
@@ -67,15 +42,9 @@ def make_env(env_path=None, time_scale=1, no_graphics=True, verbose=True, env_ty
         seed=seed
     )
     
-    # Set time scale for simulation
-    channel.set_configuration_parameters(
-        time_scale=time_scale,
-        quality_level=0,
-        target_frame_rate=60
-    )
+    channel.set_configuration_parameters(time_scale=time_scale, quality_level=0, target_frame_rate=60)
     env_params_channel.set_float_parameter("seed", float(seed))
     
-    # Choose appropriate wrapper based on env_type
     if env_type == "multimodal":
         from src.environments.env_multimodal_gymnasium_wrapper import UnityMultimodalGymWrapper
         gymnasium_env = UnityMultimodalGymWrapper(unity_env, add_previous_action=True)

@@ -1,10 +1,3 @@
-#!/usr/bin/env python3
-"""
-PPO Evaluation Script for Warehouse Stage3 Environments
-
-This script loads a PPO agent and evaluates it on the S3 (more complex) environment.
-"""
-
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -14,16 +7,12 @@ import random
 import os
 import sys
 
-# Add root directory to path to find config module
 current_dir = os.path.dirname(os.path.abspath(__file__))
 root_dir = os.path.dirname(os.path.dirname(current_dir))
 if root_dir not in sys.path:
     sys.path.insert(0, root_dir)
 
-# Environment imports
 from src.environments.env_utils import make_env
-
-# Algorithm imports
 from src.models.actor_critic_multimodal_embedding import ActorCriticMultimodal
 from src.models.model_utils import count_parameters, load_model_checkpoint
 from src.utils.evaluation import evaluate_policy

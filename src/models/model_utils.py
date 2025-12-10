@@ -1,8 +1,3 @@
-#!/usr/bin/env python3
-"""
-Model utilities for saving and loading trained models.
-"""
-
 import os
 import torch as th
 from typing import Dict, Any, Optional, Tuple
@@ -23,11 +18,8 @@ def save_model_checkpoint(
     try:
         # Create save directory if it doesn't exist
         os.makedirs(save_dir, exist_ok=True)
-        
-        # Construct full file path
         model_path = os.path.join(save_dir, filename)
         
-        # Prepare checkpoint data
         checkpoint = {
             'model_state_dict': model.state_dict(),
             'optimizer_state_dict': optimizer.state_dict(),
@@ -38,11 +30,9 @@ def save_model_checkpoint(
             'final_std_return': final_std_return
         }
         
-        # Add additional info if provided
         if additional_info:
             checkpoint.update(additional_info)
         
-        # Save checkpoint
         th.save(checkpoint, model_path)
         
         print(f"Model checkpoint saved to: {model_path}")
@@ -62,12 +52,8 @@ def load_model_checkpoint(
         raise FileNotFoundError(f"Model checkpoint not found at: {model_path}")
     
     try:
-        print(f"Loading model checkpoint from: {model_path}")
-        
-        # Load checkpoint
         checkpoint = th.load(model_path, map_location=device, weights_only=False)
         
-        # Load model state
         model.load_state_dict(checkpoint['model_state_dict'])
         model.to(device)
         model.eval()
@@ -80,13 +66,10 @@ def load_model_checkpoint(
             else:
                 print("Warning: No optimizer state found in checkpoint")
         
-        # Print checkpoint information
-        print("Model loaded successfully!")
-        print(f"Training settings: {checkpoint.get('settings', 'Not available')}")
-        print(f"Training iterations: {checkpoint.get('training_iterations', 'Not available')}")
-        print(f"Final mean return: {checkpoint.get('final_mean_return', 'Not available')}")
-        print(f"Final std return: {checkpoint.get('final_std_return', 'Not available')}")
-        print(f"Seed: {checkpoint.get('seed', 'Not available')}")
+        print(f"Model loaded from {model_path}")
+        print(f"Iterations: {checkpoint.get('training_iterations', 'N/A')}, "
+              f"Return: {checkpoint.get('final_mean_return', 'N/A')}, "
+              f"Seed: {checkpoint.get('seed', 'N/A')}")
         
         return model, checkpoint
         

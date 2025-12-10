@@ -1,32 +1,20 @@
-#!/usr/bin/env python3
-"""
-PPO Training Script for Warehouse Stage2 Environments
-
-This script trains a PPO agent on the custom warehouse environment using camera observations.
-"""
-
 import warnings
+warnings.filterwarnings("ignore")
 
 import wandb
-warnings.filterwarnings("ignore")
 
 import time
 import torch as th
 import os
 import sys
 
-# Add root directory to path to find config module
 current_dir = os.path.dirname(os.path.abspath(__file__))
 root_dir = os.path.dirname(os.path.dirname(current_dir))
 if root_dir not in sys.path:
     sys.path.insert(0, root_dir)
 
-# Environment imports
 from src.environments.env_utils import make_env
-
-# Algorithm imports
 from src.algorithms.PPO_algorithm import PPOAgent, create_optimizer_and_lr_scheduler
-
 from src.models.actor_critic_multimodal_embedding import ActorCriticMultimodal
 from src.utils.seed_utils import set_all_seeds
 from src.models.model_utils import count_parameters, save_model_checkpoint, create_model_filename, get_default_save_dir

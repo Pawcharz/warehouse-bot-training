@@ -42,13 +42,11 @@ class UnityMultimodalGymWrapper(gym.Env):
     """
 
     actual_observations = np.array([vector_obs[0][:2]])
-
     info_observations = vector_obs[0][2:]
     info = {
       "map_position": info_observations[0:2],
       "forward_direction": info_observations[2:4],
     }
-
     return actual_observations, info
   
   # action is an integer - id of the action
@@ -89,7 +87,6 @@ class UnityMultimodalGymWrapper(gym.Env):
       # terminated and truncated are mutually exclusive
     else:
       obs, info = self.prepare_obs(decision_steps.obs, action_proper)
-      
       reward = decision_steps.reward[0]
       terminated = False
       truncated = False

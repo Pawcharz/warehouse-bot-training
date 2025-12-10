@@ -1,14 +1,4 @@
-"""
-Early stopping for PPO training.
-
-Usage:
-    early_stop = EarlyStoppingCondition(window_size=10, metric_threshold=95.0)
-    agent.train(env, iterations=300, early_stopping_fn=early_stop)
-"""
-
 import numpy as np
-from typing import Dict
-
 
 class EarlyStoppingCondition:
     """Stop training when average return over past K iterations >= threshold."""
@@ -27,11 +17,9 @@ class EarlyStoppingCondition:
         """Check if should stop training."""
         self.metric_history.append(metric)
         
-        # Keeps only the most recent window_size metrics
         if len(self.metric_history) > self.window_size:
             self.metric_history.pop(0)
         
-        # Check condition
         if len(self.metric_history) >= self.window_size:
             mean_metric = np.mean(self.metric_history)
             if mean_metric >= self.metric_threshold:

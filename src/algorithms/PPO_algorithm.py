@@ -73,7 +73,7 @@ class RolloutBuffer:
   
   def get_data(self):
     """Get all data as tensors"""
-    # FIX - make all data fields the same type, either tensor or np.ndarray
+    
     result = {}
     for key in self.data.keys():
       if key in ['obs', 'next_obs']:
@@ -162,7 +162,7 @@ class PPOAgent:
     if self.logger is not None:
       self.logger.log_hyperparameters(settings)
 
-  # Inspired by https://github.com/nikhilbarhate99/PPO-PyTorch/blob/master/PPO.py#L226 SOURCE
+  # Inspired by https://github.com/nikhilbarhate99/PPO-PyTorch/blob/master/PPO.py#L226
   def calculate_loss(self, obs, actions, old_logprobs, returns, advantages, old_values=None):
     logps, entropy, values_pred = self.model.evaluate_actions(obs, actions)
     # Clipped policy loss
@@ -175,7 +175,6 @@ class PPOAgent:
     # Clip value to reduce critic's training variability (introduced in OpenAI's baselines and SB3))
     value_loss_unclipped = th.mean(((values_pred - returns)**2))
     
-    # th.max at the end to choose more pesimistic scenario (analogically to PPO objective/policy loss)
     if self.value_clip_eps is not None and old_values is not None:
       value_pred_clipped = old_values + th.clip(values_pred - old_values, -self.value_clip_eps, self.value_clip_eps)
       value_loss_clipped = th.mean(((value_pred_clipped - returns)**2))
@@ -206,7 +205,7 @@ class PPOAgent:
     
       Returns: losses dictionary
     """
-    # Put model into training mode
+    
     self.model.train()
     
     old_params = None
@@ -271,7 +270,7 @@ class PPOAgent:
     return losses
   
   def compute_returns(self, rewards, dones):
-    """Calculates discounted returns"""
+    """computes discounted returns"""
     
     returns = np.zeros_like(rewards)
     for t in reversed(range(len(rewards))):

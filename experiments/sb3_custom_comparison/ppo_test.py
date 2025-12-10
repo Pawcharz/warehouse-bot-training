@@ -1,11 +1,3 @@
-#!/usr/bin/env python3
-"""
-Simple PPO Test Script
-
-A basic script to test custom PPO implementation
-and log evaluation results after training.
-"""
-
 import time
 import numpy as np
 import torch as th
@@ -13,7 +5,6 @@ import gymnasium as gym
 import sys
 import os
 
-# Add root directory to path to find config module
 current_dir = os.path.dirname(os.path.abspath(__file__))
 root_dir = os.path.dirname(os.path.dirname(current_dir))
 sys.path.insert(0, root_dir)
@@ -26,8 +17,6 @@ import random
 def evaluate_policy(agent, env, num_episodes=10, seed=0):
     """Evaluate the trained policy"""
     returns = []
-    
-    # Put model in eval mode
     agent.model.eval()
     
     for episode in range(num_episodes):

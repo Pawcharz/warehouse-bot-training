@@ -1,9 +1,3 @@
-#!/usr/bin/env python3
-"""
-Ablation Study: Test different model architectures.
-Uses existing PPO training logic with proper WandB logging.
-"""
-
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -13,7 +7,6 @@ import os
 import sys
 import wandb
 
-# Setup paths
 current_dir = os.path.dirname(os.path.abspath(__file__))
 root_dir = os.path.dirname(current_dir)
 sys.path.insert(0, root_dir)

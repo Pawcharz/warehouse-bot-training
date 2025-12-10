@@ -23,13 +23,12 @@ class WandBLogger:
         self.seed = seed
         self.wandb_run = None
         
-        # Initialize WandB
         api_key = settings.get('wandb_api_key', os.getenv('WANDB_API_KEY'))
         if not api_key:
-            raise Exception("WANDB_API_KEY not found. Disabling WandB logging.")
+            raise Exception("WANDB_API_KEY not found")
         
-        project_name = settings.get('wandb_project',    os.getenv('WANDB_PROJECT'))
-        wandb_entity = settings.get('wandb_entity',    os.getenv('WANDB_ENTITY'))
+        project_name = settings.get('wandb_project', os.getenv('WANDB_PROJECT'))
+        wandb_entity = settings.get('wandb_entity', os.getenv('WANDB_ENTITY'))
         experiment_name = settings.get('experiment_name', None)
         wandb_group = settings.get('wandb_group', None)
         wandb_tags = settings.get('wandb_tags', [])
@@ -44,7 +43,6 @@ class WandBLogger:
                     'reinit': True
                 }
                 
-                # Add group if specified (useful for multiseed experiments)
                 if wandb_group is not None:
                     init_kwargs['group'] = wandb_group
                 
@@ -84,16 +82,13 @@ class WandBLogger:
         if self.wandb_run is not None:
             component_changes_abs_mean = defaultdict(list)
             
-            # Collect mean average of changes for each component
             for name, param in named_model_params:
                 if param.requires_grad and name in old_params:
                     change = param.data - old_params[name]
-
                     component = self._extract_component_name(name)
                     abs_mean = change.flatten().abs().mean().item()
                     component_changes_abs_mean[component].append(abs_mean)
         
-            # Log aggregated component statistics
             log_dict = {f'param_changes/{comp}': np.mean(abs_change) for comp, abs_change in component_changes_abs_mean.items()}
             self.wandb_run.log(log_dict, step=iteration)
     
@@ -103,14 +98,12 @@ class WandBLogger:
         if self.wandb_run is not None:
             component_gradients_abs_mean = defaultdict(list)
             
-            # Collect gradient abs mean for each component
             for name, param in named_model_params:
                 if param.requires_grad and param.grad is not None:
                     component = self._extract_component_name(name)
                     grad_abs_mean = param.grad.flatten().abs().mean().item()
                     component_gradients_abs_mean[component].append(grad_abs_mean)
             
-            # Log aggregated component statistics
             log_dict = {}
             for component, gradients_abs_mean in component_gradients_abs_mean.items():
                 if gradients_abs_mean:
@@ -125,14 +118,12 @@ class WandBLogger:
         if self.wandb_run is not None:
             component_weights_abs_mean = defaultdict(list)
             
-            # Collect weight abs mean for each component
             for name, param in named_model_params:
                 if param.requires_grad:
                     component = self._extract_component_name(name)
                     weight_abs_mean = param.flatten().abs().mean().item()
                     component_weights_abs_mean[component].append(weight_abs_mean)
             
-            # Log aggregated component statistics
             log_dict = {}
             for component, weights_abs_mean in component_weights_abs_mean.items():
                 if weights_abs_mean:
@@ -145,13 +136,10 @@ class WandBLogger:
         """Log key training performance metrics like mean and std of returns etc."""
         
         if self.wandb_run is not None:
-            # Log only the most important metrics to minimize columns
             log_dict = defaultdict(list)
-
             for key, value in metrics.items():
                 if value is not None:
                     log_dict[f'training/{key}'] = value
-        
             self.wandb_run.log(log_dict, step=iteration)
     
     def log_evaluation_metrics(self, iteration, metrics):
@@ -159,11 +147,9 @@ class WandBLogger:
         
         if self.wandb_run is not None:
             log_dict = defaultdict(list)
-            
             for key, value in metrics.items():
                 if value is not None:
                     log_dict[f'eval/{key}'] = value
-            
             self.wandb_run.log(log_dict, step=iteration)
     
     def log_event(self, iteration, event_name):
@@ -176,24 +162,20 @@ class WandBLogger:
         """Log training loss components."""
         
         if self.wandb_run is not None:
-            # Log main losses only
             log_dict = defaultdict(list)
             for loss_component, value in mean_losses.items():
                 if value is not None:
                     log_dict[f'losses/{loss_component}'] = value
-            
             self.wandb_run.log(log_dict, step=iteration)
 
     def log_learning_rates(self, iteration, optimizer):
         """Log current learning rates for each group of parameters."""
         
         if self.wandb_run is not None:
-            # Log current learning rates as they change
             log_dict = {}
             for i, param_group in enumerate(optimizer.param_groups):
                 group_name = param_group.get('name', f'group_{i}')
                 log_dict[f'lr/{group_name}'] = param_group['lr']
-            
             self.wandb_run.log(log_dict, step=iteration)
 
     def log_console_training_summary(self, iteration, ep_returns: np.ndarray, time_taken, steps: np.ndarray, losses: dict, current_lrs):
@@ -218,24 +200,17 @@ class WandBLogger:
         if self.wandb_run is not None:
             
             coords_range = bounds[1] - bounds[0]
-
-            # --- Compute bounds and bucket indices ---
             x_coords, y_coords = heatmap_data[:, 0], heatmap_data[:, 1]
             
-            # Round and clip coordinates
             x_coords = np.clip(x_coords, bounds[0], bounds[1])
             y_coords = np.clip(y_coords, bounds[0], bounds[1])
-                
-            heatmap = np.zeros((buckets, buckets), dtype=np.float32)
-
-            # Positions transformation
             
             x_idx = np.clip(np.floor((x_coords - bounds[0]) * buckets / coords_range), 0, buckets-1).astype(int)
             y_idx = np.clip(np.floor((y_coords - bounds[0]) * buckets / coords_range), 0, buckets-1).astype(int)
 
             heatmap = np.zeros((buckets, buckets), dtype=np.float32)
             for xi, yi in zip(x_idx, y_idx):
-                heatmap[yi, xi] += 1 # ax.imshow assumes [row, col], therefore [row, col] = [y, x]
+                heatmap[yi, xi] += 1
 
             fig, ax = plt.subplots()
             cax = ax.imshow(

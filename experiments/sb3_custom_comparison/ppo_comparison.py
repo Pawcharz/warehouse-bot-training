@@ -1,11 +1,3 @@
-#!/usr/bin/env python3
-"""
-PPO Implementation Comparison with Multiple Seeds
-
-Runs custom and SB3 PPO implementations on multiple seeds and provides
-statistical comparison of results.
-"""
-
 import time
 import numpy as np
 import torch as th
@@ -21,11 +13,8 @@ from datetime import datetime
 import wandb
 warnings.filterwarnings('ignore')
 
-# Get the root directory (two levels up from this script)
 script_dir = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = os.path.dirname(os.path.dirname(script_dir))
-
-# Add src directory to path
 sys.path.insert(0, ROOT_DIR)
 
 from src.algorithms.PPO_algorithm import PPOAgent, create_optimizer_and_lr_scheduler
@@ -44,8 +33,6 @@ def set_seed(seed):
 def evaluate_policy(agent, env, num_episodes=10, seed=0):
     """Evaluate policy and return mean/std of returns"""
     returns = []
-    
-    # Put model in eval mode
     agent.model.eval()
     
     for episode in range(num_episodes):
@@ -302,7 +289,6 @@ def run_comparison(env_name, seeds, custom_iterations=10, sb3_timesteps=10240):
     }
 
 def main():
-    """Main comparison function"""
     print("PPO Implementation Comparison with Multiple Seeds")
     print("=" * 60)
     
