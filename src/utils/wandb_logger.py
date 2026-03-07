@@ -166,6 +166,53 @@ class WandBLogger:
             
             self.wandb_run.log(log_dict, step=iteration)
     
+    def log_evaluation_outcomes(self, iteration, outcomes, num_episodes):
+        """Log episode outcome percentages as stacked area data.
+        
+        Args:
+            iteration: Current training iteration
+            outcomes: Dict with outcome categories as keys (dynamically determined) and 'details'
+            num_episodes: Total number of evaluation episodes
+        """
+        if self.wandb_run is not None:
+            # Dynamically handle all outcome categories (except 'details')
+            log_dict = {}
+            table_data = []
+            
+            for outcome_name, count in outcomes.items():
+                if outcome_name != 'details':  # Skip the details list
+                    percentage = (count / num_episodes) * 100
+                    
+                    # Log individual percentages for plotting
+                    log_dict[f'eval_outcomes/{outcome_name}_pct'] = percentage
+                    
+                    # Add to table data
+                    table_data.append([iteration, outcome_name, count, percentage])
+            
+            # Log all percentage metrics
+            self.wandb_run.log(log_dict, step=iteration)
+            
+            # Log counts as a table for stacked visualization
+            outcomes_table = wandb.Table(
+                columns=['iteration', 'outcome_type', 'count', 'percentage'],
+                data=table_data
+            )
+            self.wandb_run.log({'eval_outcomes/distribution': outcomes_table}, step=iteration)
+            
+            # Log episode details table
+            details_table = wandb.Table(columns=['episode', 'return', 'steps', 'terminated', 'truncated', 'outcome'])
+            for i, detail in enumerate(outcomes['details']):
+                details_table.add_data(
+                    i,
+                    detail['return'],
+                    detail['steps'],
+                    detail['terminated'],
+                    detail['truncated'],
+                    detail.get('outcome', 'unknown')
+                )
+            
+            self.wandb_run.log({f'eval_outcomes/details_iter_{iteration}': details_table}, step=iteration)
+    
     def log_event(self, iteration, event_name):
         """Log a training event (e.g., early stopping)."""
         
@@ -209,29 +256,29 @@ class WandBLogger:
         print(f"Learning Rates: {[f'{lr:.2e}' for lr in current_lrs]}")
     
     def log_heatmap_data(self, iteration, heatmap_data: np.ndarray, name: str, title: str, x_label: str, y_label: str, bounds: tuple = (-5, 5), buckets: int = 10):
-        """Log heatmap data.
+        """Log heatmap frequency data as a plotly-compatible table for WandB visualization.
         
         Args:
             iteration: The iteration number.
             heatmap_data: The heatmap data to log. Shape: (timesteps, features), features: [x, y].
-            grid_size: The grid size. Shape: (x, y).
+            name: Name for the heatmap data
+            title: Title for the heatmap
+            x_label: X-axis label
+            y_label: Y-axis label
+            bounds: Coordinate bounds tuple (min, max)
+            buckets: Number of grid buckets
         """
         
         if self.wandb_run is not None:
-            
             coords_range = bounds[1] - bounds[0]
 
-            # --- Compute bounds and bucket indices ---
             x_coords, y_coords = heatmap_data[:, 0], heatmap_data[:, 1]
             
             # Round and clip coordinates
             x_coords = np.clip(x_coords, bounds[0], bounds[1])
             y_coords = np.clip(y_coords, bounds[0], bounds[1])
-                
-            heatmap = np.zeros((buckets, buckets), dtype=np.float32)
 
             # Positions transformation
-            
             x_idx = np.clip(np.floor((x_coords - bounds[0]) * buckets / coords_range), 0, buckets-1).astype(int)
             y_idx = np.clip(np.floor((y_coords - bounds[0]) * buckets / coords_range), 0, buckets-1).astype(int)
 
@@ -239,23 +286,29 @@ class WandBLogger:
             for xi, yi in zip(x_idx, y_idx):
                 heatmap[yi, xi] += 1 # ax.imshow assumes [row, col], therefore [row, col] = [y, x]
 
-            fig, ax = plt.subplots()
-            cax = ax.imshow(
-                heatmap, 
-                cmap='hot', 
-                origin='lower', 
-                interpolation='nearest',
-                extent=[bounds[0], bounds[1], bounds[0], bounds[1]]
+            # Create a table with all cells for heatmap visualization
+            tick_step = coords_range / buckets
+            
+            table_data = []
+            for y_bucket in range(buckets):
+                for x_bucket in range(buckets):
+                    # Calculate actual coordinate values for the bucket centers
+                    x_coord = bounds[0] + (x_bucket + 0.5) * tick_step
+                    y_coord = bounds[0] + (y_bucket + 0.5) * tick_step
+                    count = int(heatmap[y_bucket, x_bucket])
+                    table_data.append([x_coord, y_coord, count])
+            
+            table = wandb.Table(
+                columns=[x_label, y_label, 'count'],
+                data=table_data
             )
-            ax.set_title(title)
-            ax.set_xlabel(x_label)
-            ax.set_ylabel(y_label)
-            fig.colorbar(cax, ax=ax, label='Visit count')
+            
+            # Log the table - create a heatmap manually in WandB UI
+            self.wandb_run.log({
+                f"heatmap_data/{name}": table
+            }, step=iteration)
 
-            self.wandb_run.log({f"heatmaps/{name}/iteration_{iteration}": wandb.Image(fig)}, step=iteration)
-            plt.close(fig)
-
-            print(f"Heatmap data logged for iteration {iteration}")
+            print(f"Heatmap data table logged for iteration {iteration}")
 
     def close(self):
         """Close the WandB run."""

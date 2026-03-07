@@ -64,7 +64,7 @@ def main():
     # Create environment
     print("\nCreating environment...")
     env = make_env(time_scale=1, no_graphics=False, verbose=True, env_type="multimodal", env_path='environment_builds/stage2/S2_Find_2Items_64x36camera120deg_rew0_20_100/Warehouse_Bot.exe', seed=seed)
-
+    experiment_name = f"ppo_camera_120deg_0_20_100_find_2_items_train_1"
     try:
         print(env.observation_space)
         # Get environment dimensions
@@ -96,7 +96,9 @@ def main():
             'heatmap_logging_freq': 25,
             'eval_freq': 25,  # Evaluate every 25 iterations
             'eval_episodes': 100,  # Run 10 episodes for evaluation
-            'experiment_name': f'ppo_camera_120deg_0_20_100_find_2_items_train_0_seed_0',
+            'eval_env_type': 'find',  # Use find outcome categorization
+            'eval_initial': True,  # Evaluate at iteration 0 (before training) for complete plot
+            'experiment_name': experiment_name,
             'experiment_notes': 'ppo with 120deg camera with rewards: [0, 20, 100] with task of only finding 2 items.',
         }
         training_iterations = 300
@@ -137,11 +139,13 @@ def main():
         agent.train(env, iterations=training_iterations, early_stopping_fn=early_stop_fn)
         
         training_time = time.time() - start_time
+        actual_iterations = agent.iteration
         print(f"\nTraining completed in {training_time:.2f} seconds")
+        print(f"Completed {actual_iterations} iterations (target was {training_iterations})")
         
         # Evaluation
         print("\nEvaluating trained policy...")
-        mean_return, std_return, mean_steps, std_steps, ep_returns, ep_steps = evaluate_policy(
+        mean_return, std_return, mean_steps, std_steps, ep_returns, ep_steps, eval_outcomes = evaluate_policy(
             agent.model, env, device, num_episodes=100, seed=seed, obs_type="multimodal"
         )
         
@@ -154,7 +158,8 @@ def main():
             "eval/std_return": std_return,
             "eval/mean_steps": mean_steps,
             "eval/std_steps": std_steps,
-            "training/time_sec": training_time
+            "training/time_sec": training_time,
+            "training/actual_iterations": actual_iterations
         })
 
         eval_table = wandb.Table(columns=["episode", "return", "steps"])
@@ -164,8 +169,9 @@ def main():
         
         # Save model (optional)
         try:
-            save_dir = get_default_save_dir("custom", "ppo_camera_120deg_0_20_100_find_2_items_0_seed_0")
-            filename = create_model_filename("ppo_camera_120deg_0_20_100_find_2_items_train_0_seed_0", seed)
+            
+            save_dir = get_default_save_dir("custom", experiment_name)
+            filename = create_model_filename(experiment_name, seed)
             
             model_path = save_model_checkpoint(
                 model=agent.model,
@@ -174,7 +180,7 @@ def main():
                 filename=filename,
                 settings=settings,
                 seed=seed,
-                training_iterations=training_iterations,
+                training_iterations=actual_iterations,
                 final_mean_return=mean_return,
                 final_std_return=std_return
             )

@@ -84,6 +84,8 @@ def train_config(config_name, config, env_path, iterations=300, seed=0):
             # Evaluation
             'eval_freq': 25,
             'eval_episodes': 100,
+            'eval_env_type': 'find',  # Use find outcome categorization
+            'eval_initial': True,  # Evaluate at iteration 0 (before training) for complete plot
             
             # WandB - separate project for ablation
             'wandb_project': 'warehouse-bot-ablation',
@@ -124,7 +126,7 @@ def train_config(config_name, config, env_path, iterations=300, seed=0):
         
         # Final evaluation
         print("\nFinal evaluation...")
-        eval_mean, eval_std, _, _, _, _ = evaluate_policy(
+        eval_mean, eval_std, _, _, _, _, _ = evaluate_policy(
             model, env, device, num_episodes=100, seed=seed, obs_type="multimodal", verbose=False
         )
         
@@ -167,7 +169,7 @@ def main():
     # Train all configs
     start = time.time()
     for name, config in CONFIGS.items():
-        train_config(name, config, env_path, iterations=5, seed=0)
+        train_config(name, config, env_path, iterations=300, seed=0)
     
     total_time = (time.time() - start) / 60
     print(f"\n{'='*80}")
