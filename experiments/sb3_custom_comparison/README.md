@@ -723,8 +723,8 @@ def main():
     
     for result in all_results:
         
-        custom_str = f"{result['custom_mean_of_means']:.1f}+-{result['custom_std_of_means']:.1f}"
-        sb3_str = f"{result['sb3_mean_of_means']:.1f}+-{result['sb3_std_of_means']:.1f}"
+        custom_str = f"{result['custom_mean_of_means']:.1f} +- {result['custom_std_of_means']:.1f}"
+        sb3_str = f"{result['sb3_mean_of_means']:.1f} +- {result['sb3_std_of_means']:.1f}"
         speed_str = f"{result['speed_ratio']:.1f}x"
         
         print(f"{result['env_name']:<15} {custom_str:<20} {sb3_str:<20} {speed_str:<10} {result['n_runs']:<5}")

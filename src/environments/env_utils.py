@@ -15,7 +15,7 @@ Usage:
     env = make_env(time_scale=1.0, no_graphics=False, env_type="raycasts")
     
     # For camera + raycasts environment
-    env = make_env(time_scale=1.0, no_graphics=False, env_type="camera_raycasts")
+    env = make_env(time_scale=1.0, no_graphics=False, env_type="multimodal")
 """
 
 import os
@@ -25,6 +25,7 @@ from pathlib import Path
 # Environment imports
 from mlagents_envs.side_channel.engine_configuration_channel import EngineConfigurationChannel
 from mlagents_envs.environment import UnityEnvironment
+from mlagents_envs.side_channel.environment_parameters_channel import EnvironmentParametersChannel
 
 # Add root directory to path to find config module
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -34,23 +35,19 @@ if root_dir not in sys.path:
 
 from config import ROOT_DIR
 
-def make_env(env_path=None, time_scale=6, no_graphics=True, verbose=True, env_type="vector"):
+def make_env(env_path=None, time_scale=1, no_graphics=True, verbose=True, env_type="vector", seed=0):
     """
     Create and configure the Unity environment
-    
+
     Args:
-        env_path (str, optional): Path to the Unity environment executable.
-                           If None, uses the default training environment.
-        time_scale (float): Time scale for simulation (1.0 = real-time, higher = faster).
-                           Default is 6 for training speed.
-        no_graphics (bool): Whether to disable graphics rendering.
-                           Default is True for training (faster).
-        verbose (bool): Whether to print debug information.
-        env_type (str): Type of environment wrapper to use.
-                       Options: "vector", "multimodal"
+        env_path: Path to the Unity environment .exe file
+        time_scale: time scale of simulation
+        no_graphics: if graphics should be rendered - Unity handles seeding differently if graphics are rendered - results will be constand withing these groups (with/without graphics)
+        verbose: if True, log to console
+        env_type: type of environment to create (vector or multimodal for simple vector or camera+vector observations)
+        seed: random seed for the Unity environment
     
-    Returns:
-        UnityVectorGymWrapper or UnityMultimodalGymWrapper: Configured gymnasium environment
+    Returns: UnityVectorGymWrapper or UnityMultimodalGymWrapper
     """
     if env_path is None:
         raise ValueError("env_path must be specified. Please provide the path to the Unity environment executable.")
@@ -58,17 +55,25 @@ def make_env(env_path=None, time_scale=6, no_graphics=True, verbose=True, env_ty
     if verbose:
         print(f"Looking for environment at: {env_path}")
         print(f"File exists: {os.path.exists(env_path)}")
+        print(f"Using Unity environment seed: {seed}")
     
     channel = EngineConfigurationChannel()
+    env_params_channel = EnvironmentParametersChannel()
     
     unity_env = UnityEnvironment(
         file_name=env_path,
-        side_channels=[channel],
-        no_graphics=no_graphics
+        side_channels=[channel, env_params_channel],
+        no_graphics=no_graphics,
+        seed=seed
     )
     
     # Set time scale for simulation
-    channel.set_configuration_parameters(time_scale=time_scale)
+    channel.set_configuration_parameters(
+        time_scale=time_scale,
+        quality_level=0,
+        target_frame_rate=60
+    )
+    env_params_channel.set_float_parameter("seed", float(seed))
     
     # Choose appropriate wrapper based on env_type
     if env_type == "vector":
@@ -76,7 +81,7 @@ def make_env(env_path=None, time_scale=6, no_graphics=True, verbose=True, env_ty
         gymnasium_env = UnityVectorGymWrapper(unity_env)
     elif env_type == "multimodal":
         from src.environments.env_multimodal_gymnasium_wrapper import UnityMultimodalGymWrapper
-        gymnasium_env = UnityMultimodalGymWrapper(unity_env)
+        gymnasium_env = UnityMultimodalGymWrapper(unity_env, add_previous_action=True)
     else:
         raise ValueError(f"Unknown env_type: {env_type}. Must be one of: vector, multimodal")
     

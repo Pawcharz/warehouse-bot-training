@@ -12,6 +12,8 @@ warnings.filterwarnings("ignore")
 
 import time
 import torch as th
+import numpy as np
+import random
 import os
 import sys
 
@@ -31,19 +33,24 @@ from src.models.actor_critic_multimodal_embedding import ActorCriticMultimodal
 from src.utils.seed_utils import set_all_seeds
 from src.models.model_utils import count_parameters, save_model_checkpoint, create_model_filename, get_default_save_dir
 from src.utils.evaluation import evaluate_policy
-from src.utils.early_stopping import EarlyStoppingCondition
+from src.models.intrinsic_curiosity_module import ActorCriticWithICM, IntrinsicCuriosityModule
 
-def create_param_groups(model, visual_lr, task_lr, general_lr):
+def create_param_groups(model, visual_lr, task_lr, general_lr, icm = None, icm_lr = None):
     
     visual_params = list(model.visual_encoder_cnn.parameters()) + list(model.visual_encoder_mlp.parameters())
     task_params = list(model.task_encoder.parameters())
     general_params = list(model.policy_net.parameters()) + list(model.value_net.parameters())
+    
     
     param_groups = [
         {'params': visual_params, 'lr': visual_lr, 'name': 'visual_encoder'},
         {'params': task_params, 'lr': task_lr, 'name': 'task_encoder'},
         {'params': general_params, 'lr': general_lr, 'name': 'policy_value'}
     ]
+    
+    if icm is not None:
+        icm_params = list(icm.parameters())
+        param_groups.append({'params': icm_params, 'lr': icm_lr, 'name': 'icm'})
     
     return param_groups
 
@@ -55,6 +62,7 @@ def main():
     
     print(f"Using device: {device}")
     
+    # Set seed for reproducibility FIRST, before creating anything
     seed = 0
     print(f"Using seed: {seed}")
     
@@ -63,8 +71,8 @@ def main():
     
     # Create environment
     print("\nCreating environment...")
-    env = make_env(time_scale=1, no_graphics=False, verbose=True, env_type="multimodal", env_path='environment_builds/stage2/S2_Find_2Items_64x36camera120deg_rew0_20_100/Warehouse_Bot.exe', seed=seed)
-    experiment_name = f"ppo_camera_120deg_0_20_100_find_2_items_train_1"
+    env = make_env(time_scale=1, no_graphics=False, verbose=True, env_type="multimodal", env_path='environment_builds/stage3/S3_Find_2Items_64x36camera120deg_obstacles_1_stackedObs_x5/Warehouse_Bot.exe', seed=seed)
+
     try:
         print(env.observation_space)
         # Get environment dimensions
@@ -87,61 +95,72 @@ def main():
             'buffer_size': 2048,
             'max_grad_norm': 0.5,
             'loss_val_coef': 0.5,
-            'loss_entr_coef': 0.015,
+            'loss_entr_coef': 0.01,
+            'icm_loss_weight': 0.1,
+            'icm_eta': 0.01,
+            'icm_beta': 0.6,
+            'icm_normalizer_gamma': 0.995,
+            'intrinsic_reward_scale': 0.05,
             'weight_decay': 1e-5,
             'scheduler_step_size': 100,
             'scheduler_gamma': 0.95,
             'device': device,
             'seed': seed,
-            'heatmap_logging_freq': 25,
             'eval_freq': 25,  # Evaluate every 25 iterations
-            'eval_episodes': 100,  # Run 10 episodes for evaluation
+            'eval_episodes': 10,  # Run 10 episodes for evaluation
             'eval_env_type': 'find',  # Use find outcome categorization
             'eval_initial': True,  # Evaluate at iteration 0 (before training) for complete plot
-            'experiment_name': experiment_name,
-            'experiment_notes': 'ppo with 120deg camera with rewards: [0, 20, 100] with task of only finding 2 items.',
+            'experiment_name': f'icm_module_test_small_env_with_textures_stackedObs_x5',
+            'experiment_notes': 'ppo with 120deg camera with rewards: [0, 20, 100] with task of only finding 2 items and ICM module on environment with more complex textures and obstacles',
         }
-        training_iterations = 300
+        training_iterations = 200
 
         # Create model
         model_net = ActorCriticMultimodal(act_dim, visual_obs_size=obs_dim_visual, num_items=2, device=device)
+        icm_eta = settings['icm_eta']
+        icm_beta = settings['icm_beta']
+        icm = IntrinsicCuriosityModule(feature_dim=model_net.fusion_size, action_dim=act_dim, eta=icm_eta, beta=icm_beta, device=device)
         
+        model = ActorCriticWithICM(model_net, icm)
         # Create parameter groups and optimizer/scheduler
-        param_groups = create_param_groups(model_net, visual_lr=1e-4, task_lr=1e-4, general_lr=3e-4)
-        optimizer, scheduler = create_optimizer_and_lr_scheduler(param_groups, 1e-5, 100, 0.95)
+        param_groups = create_param_groups(model_net, visual_lr=1e-4, task_lr=1e-4, general_lr=3e-4, icm=icm, icm_lr=1e-4)
+        optimizer, scheduler = create_optimizer_and_lr_scheduler(
+            param_groups, 
+            weight_decay=settings['weight_decay'],
+            scheduler_step_size=settings['scheduler_step_size'],
+            scheduler_gamma=settings['scheduler_gamma']
+        )
         
         # Print model structure
         print(f"\nModel Structure:")
-        print(model_net)
+        print(model)
         
         # Count and display parameters
-        model_params = count_parameters(model_net)
+        model_params = count_parameters(model.actor_critic)
+        icm_params = count_parameters(icm)
+        print(f"\nICM parameters: {icm_params}")
+        print(f"Total ICM parameters: {icm_params['total']}")
         print(f"\nModel parameters: {model_params}")
-        print(f"Total parameters: {model_params['total']}")
+        print(f"Total model parameters: {model_params['total']}")
         
         print(f"\nPPO Settings:")
         for key, value in settings.items():
             print(f"  {key}: {value}")
+        print(f"ICM: eta: {icm_eta}, beta: {icm_beta}")
         
         # Create PPO agent
         print("\nCreating PPO agent...")
-        agent = PPOAgent(model_net, settings, optimizer, scheduler, 0)
+        agent = PPOAgent(model, settings, optimizer, scheduler, 0)
         
         # Training
         print("\nStarting training...")
         start_time = time.time()
         
-        # Optional: Enable early stopping (uncomment to use)
-        # For PPO, early stopping is applied on the evaluation mean return
-        early_stop_fn = EarlyStoppingCondition(window_size=1, metric_threshold=95.0)
-        
         # Training iterations
-        agent.train(env, iterations=training_iterations, early_stopping_fn=early_stop_fn)
+        agent.train(env, iterations=training_iterations)
         
         training_time = time.time() - start_time
-        actual_iterations = agent.iteration
         print(f"\nTraining completed in {training_time:.2f} seconds")
-        print(f"Completed {actual_iterations} iterations (target was {training_iterations})")
         
         # Evaluation
         print("\nEvaluating trained policy...")
@@ -158,8 +177,7 @@ def main():
             "eval/std_return": std_return,
             "eval/mean_steps": mean_steps,
             "eval/std_steps": std_steps,
-            "training/time_sec": training_time,
-            "training/actual_iterations": actual_iterations
+            "training/time_sec": training_time
         })
 
         eval_table = wandb.Table(columns=["episode", "return", "steps"])
@@ -169,9 +187,8 @@ def main():
         
         # Save model (optional)
         try:
-            
-            save_dir = get_default_save_dir("custom", experiment_name)
-            filename = create_model_filename(experiment_name, seed)
+            save_dir = get_default_save_dir("custom", "icm_module_performance_test_complex_env_02_10_2025_stackedObs_x5")
+            filename = create_model_filename("icm_module_performance_test_complex_env_02_10_2025_stackedObs_x5", seed)
             
             model_path = save_model_checkpoint(
                 model=agent.model,
@@ -180,7 +197,7 @@ def main():
                 filename=filename,
                 settings=settings,
                 seed=seed,
-                training_iterations=actual_iterations,
+                training_iterations=training_iterations,
                 final_mean_return=mean_return,
                 final_std_return=std_return
             )
