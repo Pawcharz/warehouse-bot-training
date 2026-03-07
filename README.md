@@ -18,6 +18,22 @@ This repository contains the training implementation for a goal-conditioned RL a
 - **Sparse Reward Handling** - Successfully learns with delayed feedback through GAE and exploration bonuses
 - **Validated Implementation** - Tested against Stable-Baselines3 on Gymnasium benchmarks (CartPole, Acrobot)
 
+## Setup
+
+### Unity Environment Builds
+
+Unity projects from the `warehouse-bot-environment` repository must be exported into the `environment_builds/stage2/` directory. 
+
+Expected structure:
+```
+environment_builds/
+└── stage2/
+    ├── S2_Find_2Items_64x36camera120deg_rew0_20_100/
+    │   └── Warehouse_Bot.exe
+    └── S2_Find_2Items_Deliver_64x36camera120deg_rew0_20_100_100/
+        └── Warehouse_Bot.exe
+```
+
 ## Quick Start
 
 ### Training
