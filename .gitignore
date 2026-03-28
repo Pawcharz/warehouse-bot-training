@@ -1,5 +1,5 @@
-environment_builds
-__pycache__
+environment_builds/
+__pycache__/
 
 # Environment variables
 .env
@@ -8,3 +8,14 @@ __pycache__
 
 # W&B logs
 wandb/
+
+# Training / experiment logs
+logs/
+tensorboard_logs/
+
+# Binary / large files
+*.pdf
+
+# IDE
+.vscode/
+.idea/
