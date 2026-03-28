@@ -92,7 +92,7 @@ warehouse-bot-training/
 │
 ├── assets/                             # README images and diagrams
 ├── environment_builds/                 # Unity builds (git-ignored, see Setup)
-├── requirements.txt
+├── pyproject.toml                      # Project metadata and dependencies (uv)
 ├── LICENSE
 └── .env.example                        # WandB configuration template
 ```
@@ -147,19 +147,19 @@ Unity ML-Agents environments are wrapped to conform to the Gymnasium API:
 
 ### Prerequisites
 
-- Python 3.8+
-- PyTorch (with CUDA recommended)
+- Python 3.10+
+- [uv](https://docs.astral.sh/uv/) (fast Python package manager)
 - Unity environment builds from the companion [warehouse-bot](https://github.com/Pawcharz/warehouse-bot) repository
 
 ### Installation
 
 ```bash
-pip install -r requirements.txt
+uv sync
 ```
 
-For the SB3 comparison experiment, additionally:
+For the SB3 comparison experiment, include the optional dependency group:
 ```bash
-pip install stable-baselines3
+uv sync --extra sb3
 ```
 
 ### Environment Setup
@@ -186,7 +186,7 @@ pip install stable-baselines3
 Select the desired training script by editing the import in `run_training.py`, then:
 
 ```bash
-python run_training.py
+uv run python run_training.py
 ```
 
 Available training scripts:
@@ -202,7 +202,7 @@ Each training script contains its own hyperparameter configuration and specifies
 ### Evaluation
 
 ```bash
-python run_evaluation.py
+uv run python run_evaluation.py
 ```
 
 Configure the model checkpoint and environment build paths inside `src/evaluation/evaluate_model.py`.
@@ -210,7 +210,7 @@ Configure the model checkpoint and environment build paths inside `src/evaluatio
 ### Ablation Study
 
 ```bash
-python run_ablation_study.py
+uv run python run_ablation_study.py
 ```
 
 Runs architecture configurations sequentially (3/4/5 CNN blocks, 16/32/64-dim embeddings). Results are logged to WandB.
@@ -218,7 +218,7 @@ Runs architecture configurations sequentially (3/4/5 CNN blocks, 16/32/64-dim em
 ### PPO Validation (SB3 Comparison)
 
 ```bash
-python experiments/sb3_custom_comparison/ppo_comparison.py
+uv run python experiments/sb3_custom_comparison/ppo_comparison.py
 ```
 
 Multi-seed comparison of custom PPO vs. Stable-Baselines3 on CartPole-v1 and Acrobot-v1.

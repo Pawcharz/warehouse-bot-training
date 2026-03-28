@@ -5,16 +5,6 @@ Main entry point for warehouse PPO training.
 Select the desired training script by uncommenting the appropriate import below.
 """
 
-import os
-import sys
-
-current_dir = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(0, current_dir)
-
-from config import ROOT_DIR
-os.chdir(ROOT_DIR)
-
-# Select training script:
 # from src.trainings.custom_ppo_camera import main                        # Stage 1: Room_Find (camera)
 from src.trainings.custom_ppo_delivery_from_pretrained import main        # Stage 2: Room_Find_Deliver (curriculum)
 # from src.trainings.custom_ppo_camera_icm import main                   # Camera + ICM curiosity

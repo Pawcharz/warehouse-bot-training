@@ -13,18 +13,7 @@ warnings.filterwarnings("ignore")
 
 import time
 import torch as th
-import numpy as np
-import random
-import os
-import sys
 
-# Add root directory to path to find config module
-current_dir = os.path.dirname(os.path.abspath(__file__))
-root_dir = os.path.dirname(os.path.dirname(current_dir))
-if root_dir not in sys.path:
-    sys.path.insert(0, root_dir)
-
-# Environment imports
 from src.environments.env_utils import make_env
 
 # Algorithm imports
@@ -119,25 +108,17 @@ def main():
         pretrained_model_path = "saved_models/custom/ppo_camera_120deg_0_20_100_find_2_items_train_1/ppo_camera_120deg_0_20_100_find_2_items_train_1_seed_0.pth"
         print(f"\nLoading pre-trained model from: {pretrained_model_path}")
         
-        if os.path.exists(pretrained_model_path):
-            try:
-                model_net, checkpoint = load_model_checkpoint(
-                    model_path=pretrained_model_path,
-                    model=model_net,
-                    device=device,
-                    load_optimizer=False
-                )
-                pretrained_iterations = checkpoint.get('training_iterations', 0)
-                print(f"Successfully loaded pre-trained model")
-                print(f"Original model trained for {pretrained_iterations} iterations")
-                print(f"Original final mean return: {checkpoint.get('final_mean_return', 'unknown')}")
-                print(f"Will continue training from iteration {pretrained_iterations}")
-                
-            except Exception as e:
-                print(f"Warning: Could not load pre-trained model: {e}")
-                raise e
-        else:
-            raise Exception("No pre-trained model found")
+        model_net, checkpoint = load_model_checkpoint(
+            model_path=pretrained_model_path,
+            model=model_net,
+            device=device,
+            load_optimizer=False
+        )
+        pretrained_iterations = checkpoint.get('training_iterations', 0)
+        print(f"Successfully loaded pre-trained model")
+        print(f"Original model trained for {pretrained_iterations} iterations")
+        print(f"Original final mean return: {checkpoint.get('final_mean_return', 'unknown')}")
+        print(f"Will continue training from iteration {pretrained_iterations}")
         
         # Create parameter groups and optimizer/scheduler for delivery training
         param_groups = create_param_groups(model_net, visual_lr=1e-4, task_lr=1e-4, general_lr=3e-4)
@@ -200,8 +181,7 @@ def main():
         # Save delivery model with new name and path
         try:
             experiment_name = "ppo_camera_120deg_0_20_100_100_find_2_items_deliver_from_pretrained_1"
-            save_dir = os.path.join("saved_models", "custom", experiment_name)
-            os.makedirs(save_dir, exist_ok=True)
+            save_dir = get_default_save_dir("custom", experiment_name)
             filename = create_model_filename(experiment_name, seed)
             
             model_path = save_model_checkpoint(

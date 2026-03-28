@@ -1,0 +1,26 @@
+[project]
+name = "warehouse-bot-training"
+version = "1.0.0"
+description = "Deep RL training system for a warehouse navigation agent using custom PPO with multimodal observations"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10.1,<3.11"
+dependencies = [
+    "torch>=2.0.0",
+    "gymnasium>=0.29.0",
+    "numpy>=1.23.5",
+    "mlagents-envs>=1.0.0",
+    "wandb>=0.15.0",
+    "python-dotenv>=1.0.0",
+    "matplotlib>=3.7.0",
+]
+
+[project.optional-dependencies]
+sb3 = ["stable-baselines3"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src", "experiments"]

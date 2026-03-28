@@ -10,15 +10,8 @@ warnings.filterwarnings("ignore")
 import time
 import torch as th
 import os
-import sys
 import wandb
 
-# Setup paths
-current_dir = os.path.dirname(os.path.abspath(__file__))
-root_dir = os.path.dirname(current_dir)
-sys.path.insert(0, root_dir)
-
-from config import ROOT_DIR
 from src.environments.env_utils import make_env
 from src.algorithms.PPO_algorithm import PPOAgent, create_optimizer_and_lr_scheduler
 from src.models.actor_critic_multimodal_configurable import ActorCriticMultimodalConfigurable

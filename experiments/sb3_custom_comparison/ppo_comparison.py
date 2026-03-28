@@ -15,18 +15,9 @@ from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
 import warnings
 import random
-import sys
-import os
 from datetime import datetime
 import wandb
 warnings.filterwarnings('ignore')
-
-# Get the root directory (two levels up from this script)
-script_dir = os.path.dirname(os.path.abspath(__file__))
-ROOT_DIR = os.path.dirname(os.path.dirname(script_dir))
-
-# Add src directory to path
-sys.path.insert(0, ROOT_DIR)
 
 from src.algorithms.PPO_algorithm import PPOAgent, create_optimizer_and_lr_scheduler
 from src.models.actor_critic import ActorCritic

@@ -19,3 +19,6 @@ tensorboard_logs/
 # IDE
 .vscode/
 .idea/
+
+# Virtual environment
+.venv/

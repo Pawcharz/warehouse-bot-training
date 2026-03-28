@@ -6,7 +6,8 @@ Model utilities for saving and loading trained models.
 import os
 import torch as th
 from typing import Dict, Any, Optional, Tuple
-from pathlib import Path
+
+from src import PROJECT_ROOT
 
 def save_model_checkpoint(
     model: th.nn.Module,
@@ -21,7 +22,8 @@ def save_model_checkpoint(
     additional_info: Optional[Dict[str, Any]] = None
 ) -> str:
     try:
-        # Create save directory if it doesn't exist
+        if not os.path.isabs(save_dir):
+            save_dir = str(PROJECT_ROOT / save_dir)
         os.makedirs(save_dir, exist_ok=True)
         
         # Construct full file path
@@ -58,6 +60,8 @@ def load_model_checkpoint(
     load_optimizer: bool = False,
     optimizer: Optional[th.optim.Optimizer] = None
 ) -> Tuple[th.nn.Module, Dict[str, Any]]:
+    if not os.path.isabs(model_path):
+        model_path = str(PROJECT_ROOT / model_path)
     if not os.path.exists(model_path):
         raise FileNotFoundError(f"Model checkpoint not found at: {model_path}")
     
@@ -100,7 +104,7 @@ def create_model_filename(
     return f"{experiment_name}_seed_{seed}.pth"
 
 def get_default_save_dir(experiment_type: str = "custom", stage: str = "stage1") -> str:
-    return os.path.join("saved_models", experiment_type, stage)
+    return str(PROJECT_ROOT / "saved_models" / experiment_type / stage)
 
 def count_parameters(model):
     total_params = 0
