@@ -1,23 +1,38 @@
 # Warehouse Bot Training
 
-Training system for the [Warehouse Bot](https://github.com/Pawcharz/warehouse-bot) — a reinforcement learning agent that learns to navigate a 3D warehouse environment, find items, and deliver them. Built from scratch using **PyTorch** with a custom **PPO** (Proximal Policy Optimization) implementation, designed to work with **Unity ML-Agents** environments.
+Training system for the [Warehouse Bot](https://github.com/Pawcharz/warehouse-bot) — a deep reinforcement learning agent that learns to navigate a 3D warehouse environment, find specific items, and deliver them to a deposit location. Built from scratch using **PyTorch** with a custom **PPO** (Proximal Policy Optimization) implementation, designed to work with **Unity ML-Agents** environments.
+
+This project was developed as an engineering thesis at Gdansk University of Technology (2025).
 
 ## Overview
 
-This repository contains the complete RL training pipeline for a warehouse robot that learns through:
+The agent receives visual input from a head-mounted camera (64x36 RGB, 120 FOV) and task-specific vector observations (demanded item + held item IDs). It learns through a 2-stage curriculum:
 
-1. **Stage 1 — Raycast observations**: The agent uses vector-based raycast sensors and a simple MLP actor-critic to learn basic navigation and item finding/delivery.
-2. **Stage 2 — Camera observations**: The agent uses a 64×36 RGB camera (120° FOV) combined with task-specific item embeddings. A CNN+MLP multimodal architecture processes the visual input alongside learned task representations.
-3. **Stage 2 Delivery — Transfer learning**: A pre-trained "find items" model is fine-tuned on a delivery task (find items *and* deliver to locations), leveraging previously learned visual features.
-4. **Stage 3 — Complex environments**: The trained agents are evaluated (and optionally trained with ICM curiosity) in more complex warehouse layouts with obstacles and varied textures.
+1. **Stage 1 — Room_Find**: The agent learns to navigate to the correct item out of 2, using camera observations and task embeddings. A CNN+MLP multimodal architecture processes visual input alongside learned task representations.
+2. **Stage 2 — Room_Find_Deliver**: The pre-trained Stage 1 model is fine-tuned to also deliver the found item to a deposit location, leveraging previously learned visual and navigation features.
+
+<p align="center">
+  <img src="assets/environment_overview.jpg" width="380" alt="Environment overview — agent with 120° camera FOV, two items, and deposit location">
+  <img src="assets/observation_system.jpg" width="480" alt="Observation system — camera input C and vector input V feeding into the agent's brain">
+</p>
+
+### Results
+
+| Task | Training Iterations | Simulation Steps | Success Rate |
+|---|---|---|---|
+| Room_Find | 225 | 471,103 | 100% |
+| Room_Find_Deliver | +325 (550 total) | +679,396 (1,150,499 total) | 96% |
+
+The final agent achieves a 96% delivery success rate with 0% wall collisions, trained entirely with sparse rewards (no shaping).
 
 ### Key Features
 
 - **Custom PPO implementation** with GAE (Generalized Advantage Estimation), value clipping, and reward normalization
-- **Multimodal actor-critic architecture**: CNN visual encoder + learned task embeddings with concatenation fusion
+- **Multimodal actor-critic architecture**: CNN visual encoder + learned task embeddings with feature-level concatenation fusion
 - **Intrinsic Curiosity Module (ICM)** for curiosity-driven exploration in sparse-reward environments
-- **Transfer learning** support — load pre-trained models and continue training on new tasks
-- **Ablation study framework** with configurable model architecture (CNN depth, embedding dimensions)
+- **Curriculum learning** — transfer from simple to complex tasks
+- **Architecture ablation study** with configurable CNN depth and embedding dimensions
+- **PPO validation** against Stable-Baselines3 on standard Gymnasium benchmarks
 - **WandB integration** for experiment tracking (metrics, losses, gradients, weight distributions, heatmaps)
 - **Early stopping** based on evaluation performance
 - **Reproducibility** through comprehensive seed management
@@ -25,8 +40,6 @@ This repository contains the complete RL training pipeline for a warehouse robot
 ---
 
 ## Project Structure
-
-### Core System (actively used)
 
 ```
 warehouse-bot-training/
@@ -38,7 +51,7 @@ warehouse-bot-training/
 │
 ├── src/
 │   ├── algorithms/
-│   │   ├── PPO_algorithm.py            # Custom PPO agent (GAE, RolloutBuffer, training loop)
+│   │   ├── PPO_algorithm.py            # Custom PPO (GAE, RolloutBuffer, training loop)
 │   │   └── RewardsNormalizer.py        # Running mean/std reward normalization
 │   │
 │   ├── environments/
@@ -47,21 +60,20 @@ warehouse-bot-training/
 │   │   └── env_vector_gymnasium_wrapper.py      # Gymnasium wrapper for vector-only obs
 │   │
 │   ├── models/
-│   │   ├── actor_critic.py                          # MLP Actor-Critic (Stage 1 / raycasts)
-│   │   ├── actor_critic_multimodal_embedding.py     # CNN+Task Embedding Actor-Critic (Stage 2+)
-│   │   ├── actor_critic_multimodal_configurable.py  # Configurable variant (ablation study)
-│   │   ├── intrinsic_curiosity_module.py            # ICM (forward/inverse models + wrapper)
-│   │   ├── model_utils.py                           # Save/load checkpoints, parameter counting
-│   │   └── icm_utils.py                             # Named parameter extraction for ICM models
+│   │   ├── actor_critic.py                        # MLP Actor-Critic (PPO validation)
+│   │   ├── actor_critic_multimodal_embedding.py   # CNN+Task Embedding Actor-Critic (main model)
+│   │   ├── actor_critic_multimodal_configurable.py # Configurable variant (ablation study)
+│   │   ├── intrinsic_curiosity_module.py          # ICM (forward/inverse models + wrapper)
+│   │   ├── model_utils.py                         # Save/load checkpoints, parameter counting
+│   │   └── icm_utils.py                           # Named parameter extraction for ICM
 │   │
 │   ├── trainings/
-│   │   ├── custom_ppo_camera.py                     # Stage 2 training (camera, no ICM)
-│   │   ├── custom_ppo_camera_icm.py                 # Stage 2/3 training (camera + ICM)
-│   │   ├── custom_ppo_delivery_from_pretrained.py   # Delivery fine-tuning from pre-trained model
-│   │   └── custom_ppo_raycasts.py                   # Stage 1 training (raycasts only)
+│   │   ├── custom_ppo_camera.py                     # Stage 1: Room_Find (camera observations)
+│   │   ├── custom_ppo_camera_icm.py                 # Training with ICM curiosity
+│   │   └── custom_ppo_delivery_from_pretrained.py   # Stage 2: Room_Find_Deliver (curriculum)
 │   │
 │   ├── evaluation/
-│   │   └── evaluate_model.py           # Standalone model evaluation script
+│   │   └── evaluate_model.py           # Standalone model evaluation
 │   │
 │   └── utils/
 │       ├── evaluation.py               # Shared policy evaluation function
@@ -71,89 +83,63 @@ warehouse-bot-training/
 │
 ├── experiments/
 │   ├── ablation_study.py               # Architecture ablation (CNN depth, embedding dims)
-│   └── sb3_custom_comparison/          # Custom PPO vs Stable-Baselines3 PPO comparison
+│   └── sb3_custom_comparison/          # Custom PPO vs Stable-Baselines3 comparison
 │       ├── ppo_comparison.py           # Multi-seed comparison on CartPole/Acrobot
-│       ├── ppo_test.py                 # Simple PPO sanity test
 │       └── README.md                   # Experiment documentation & results
 │
-├── environment_builds/                 # Unity builds go here (git-ignored)
-│   └── stage2/
-│       └── README.txt
-│
 ├── saved_models/
-│   ├── custom/                         # Custom PPO checkpoints (.pth)
-│   └── baselines/                      # SB3 baseline checkpoints (.zip) — legacy
+│   └── custom/                         # Trained model checkpoints (.pth)
 │
-└── logs/                               # TensorBoard training logs
-    ├── stage1/
-    └── stage2/
+├── assets/                             # README images and diagrams
+├── environment_builds/                 # Unity builds (git-ignored, see Setup)
+├── pyproject.toml                      # Project metadata and dependencies (uv)
+├── LICENSE
+└── .env.example                        # WandB configuration template
 ```
-
-### Experimental / Legacy (not part of the main pipeline)
-
-| File / Directory | Status | Notes |
-|---|---|---|
-| `src/models/actor_critic_multimodal.py` | **Superseded** | Earlier multimodal model using vector repeat+MLP instead of task embeddings. Replaced by `actor_critic_multimodal_embedding.py`. |
-| `src/models/actor_critic_multimodal_embedding_actions.py` | **Experimental** | Variant that also embeds the previous action as input. Not used by any training script. Contains copy-paste artifacts. |
-| `src/notebooks/ppo_training_sb3.ipynb` | **Legacy** | Early exploration using SB3's PPO with a custom feature extractor. References a now-removed wrapper (`env_camera_raycasts_gymnasium_wrapper`). |
-| `src/notebooks/ppo_inference_sb3.ipynb` | **Legacy** | Paired with the above notebook for SB3 model inference. |
-| `test.ipynb` | **Experimental** | Ad-hoc prototyping notebook. Uses old import paths. |
-| `src/saved_models/` | **Legacy** | Single old Stage 1 checkpoint, not referenced by current scripts. |
-| `saved_models/baselines/` | **Legacy** | SB3-trained model checkpoints from early experiments. |
 
 ---
 
 ## Architecture
 
-### PPO Algorithm (`PPO_algorithm.py`)
+### PPO Algorithm
 
-The custom PPO implementation includes:
+The custom PPO implementation (`PPO_algorithm.py`) includes:
 
-- **GAE** (Generalized Advantage Estimation) with configurable γ and λ
-- **Clipped surrogate objective** (policy loss) as described in the original PPO paper
-- **Value function clipping** to reduce critic training variability (from OpenAI baselines)
+- **GAE** (Generalized Advantage Estimation) with configurable gamma and lambda
+- **Clipped surrogate objective** as described in the original PPO paper
+- **Value function clipping** to reduce critic training variability
 - **Reward normalization** using running mean/std of discounted returns
-- **Optional advantage normalization**
 - **Per-component learning rates** via parameter groups (visual encoder, task encoder, policy/value heads)
 - **Learning rate scheduling** with StepLR
 - **Gradient clipping** (max grad norm)
-- **Optional ICM integration** — intrinsic curiosity rewards are normalized separately and added to extrinsic rewards with a configurable scale
+- **Optional ICM integration** for intrinsic curiosity rewards
 
-### Model Architectures
+### Multimodal Actor-Critic (main model)
 
-#### `ActorCritic` (Stage 1 — Vector observations)
-Simple MLP with separate actor and critic networks:
-- 2-layer Tanh-activated MLP (128→128) for both actor and critic
-- Input: raycast observation vector
-- Output: discrete action distribution + state value
+The `ActorCriticMultimodal` architecture combines visual and task modalities:
 
-#### `ActorCriticMultimodal` with Task Embeddings (Stage 2+ — Camera observations)
-Multimodal architecture with:
-- **Visual encoder**: 4-block CNN (Conv2d → BatchNorm → ReLU → Pool) followed by a 3-layer MLP with dropout and LayerNorm, producing a 64-dim visual embedding
-- **Task encoder**: Learned item embeddings (pick item + held item) processed through a 3-layer MLP with LayerNorm, producing a 64-dim task embedding
+<p align="center">
+  <img src="assets/architecture_diagram.png" width="700" alt="Multimodal actor-critic architecture diagram">
+</p>
+
+- **Visual encoder**: 4-block CNN (Conv2d → BatchNorm → ReLU → MaxPool) → 3-layer MLP with dropout and LayerNorm → 64-dim visual embedding
+- **Task encoder**: Learned item embeddings (demanded item + held item) → 3-layer MLP with LayerNorm → 64-dim task embedding
 - **Fusion**: Concatenation of visual and task embeddings (128-dim)
-- **Policy head**: 3-layer MLP (128→64→act_dim)
-- **Value head**: 3-layer MLP (128→64→1)
+- **Policy head**: 3-layer MLP (128 → 64 → 3 actions: turn left, turn right, move forward)
+- **Value head**: 3-layer MLP (128 → 64 → 1)
 
-#### `ActorCriticMultimodalConfigurable` (Ablation Study)
-Same architecture as above but with configurable:
-- Number of CNN blocks (3, 4, or 5)
-- Task embedding dimension (16, 32, or 64)
-- Fusion strategy (currently concatenation)
+### Intrinsic Curiosity Module (ICM)
 
-#### Intrinsic Curiosity Module (ICM)
-Optional wrapper around any actor-critic model:
-- **Feature network**: Reuses the actor-critic's shared encoding
-- **Inverse model**: Predicts action from (current, next) state features — learns useful feature representations
-- **Forward model**: Predicts next state features from (current features, action) — prediction error = intrinsic reward
-- Configurable η (reward scaling) and β (inverse vs. forward loss weight)
+Optional wrapper for curiosity-driven exploration:
+- **Inverse model**: Predicts action from (current, next) state features
+- **Forward model**: Predicts next state features — prediction error = intrinsic reward
+- Configurable eta (reward scaling) and beta (inverse vs. forward loss weight)
 
 ### Environment Wrappers
 
 Unity ML-Agents environments are wrapped to conform to the Gymnasium API:
-
-- **`UnityVectorGymWrapper`**: For vector-only observations (raycasts)
-- **`UnityMultimodalGymWrapper`**: For camera + vector observations, with automatic splitting of vector observations into actual observations and info (map position, forward direction for heatmap logging)
+- **`UnityVectorGymWrapper`**: For vector-only observations
+- **`UnityMultimodalGymWrapper`**: For camera + vector observations
 
 ---
 
@@ -161,34 +147,24 @@ Unity ML-Agents environments are wrapped to conform to the Gymnasium API:
 
 ### Prerequisites
 
-- Python 3.8+
-- PyTorch (with CUDA support recommended)
-- Unity ML-Agents Python package (`mlagents_envs`)
-- Gymnasium
-- NumPy
-- WandB (for experiment tracking)
-- `python-dotenv` (optional, for `.env` file loading)
+- Python 3.10+
+- [uv](https://docs.astral.sh/uv/) (fast Python package manager)
+- Unity environment builds from the companion [warehouse-bot](https://github.com/Pawcharz/warehouse-bot) repository
 
-### Required Python packages
+### Installation
 
-```
-torch
-gymnasium
-numpy
-mlagents_envs
-wandb
-python-dotenv
-matplotlib
+```bash
+uv sync
 ```
 
-For the SB3 comparison experiment, additionally:
-```
-stable-baselines3
+For the SB3 comparison experiment, include the optional dependency group:
+```bash
+uv sync --extra sb3
 ```
 
 ### Environment Setup
 
-1. **Build Unity environments** from the companion [warehouse-bot](https://github.com/Pawcharz/warehouse-bot) repository and export them to `environment_builds/`:
+1. **Build Unity environments** from the [warehouse-bot](https://github.com/Pawcharz/warehouse-bot) repository and place them in `environment_builds/`:
    ```
    environment_builds/
    └── stage2/
@@ -196,11 +172,9 @@ stable-baselines3
            └── Warehouse_Bot.exe
    ```
 
-2. **Configure WandB** (optional but recommended) by creating a `.env` file in the project root:
-   ```
-   WANDB_API_KEY=your_api_key
-   WANDB_PROJECT=your_project_name
-   WANDB_ENTITY=your_entity
+2. **Configure WandB** (optional but recommended) — copy `.env.example` to `.env` and fill in your credentials:
+   ```bash
+   cp .env.example .env
    ```
 
 ---
@@ -209,59 +183,51 @@ stable-baselines3
 
 ### Training
 
-Edit `run_training.py` to select the desired training script, then:
+Select the desired training script by editing the import in `run_training.py`, then:
 
 ```bash
-python run_training.py
+uv run python run_training.py
 ```
 
-Available training scripts (configured via import in `run_training.py`):
+Available training scripts:
 
 | Script | Description |
 |---|---|
-| `custom_ppo_raycasts` | Stage 1 — raycast observations, basic find/deliver |
-| `custom_ppo_camera` | Stage 2 — camera observations, find items task |
-| `custom_ppo_camera_icm` | Stage 2/3 — camera + ICM curiosity exploration |
-| `custom_ppo_delivery_from_pretrained` | Stage 2 — delivery fine-tuning from pre-trained model |
+| `custom_ppo_camera` | Stage 1 — camera observations, Room_Find task |
+| `custom_ppo_delivery_from_pretrained` | Stage 2 — delivery fine-tuning from pre-trained Stage 1 model |
+| `custom_ppo_camera_icm` | Camera + ICM curiosity exploration |
 
-Each training script contains its own hyperparameter configuration (γ, λ, clip_eps, learning rates, buffer size, etc.) and specifies the Unity environment build path.
+Each training script contains its own hyperparameter configuration and specifies the Unity environment build path.
 
 ### Evaluation
 
 ```bash
-python run_evaluation.py
+uv run python run_evaluation.py
 ```
 
-Loads a saved model checkpoint and evaluates it on a specified environment. Configure the model path and environment build path inside `src/evaluation/evaluate_model.py`.
+Configure the model checkpoint and environment build paths inside `src/evaluation/evaluate_model.py`.
 
 ### Ablation Study
 
 ```bash
-python run_ablation_study.py
+uv run python run_ablation_study.py
 ```
 
-Runs multiple model architecture configurations sequentially:
-- **baseline**: 4 CNN blocks, 32-dim task embedding
-- **visual_shallow**: 3 CNN blocks
-- **visual_deep**: 5 CNN blocks
-- **embedding_small**: 16-dim task embedding
-- **embedding_large**: 64-dim task embedding
+Runs architecture configurations sequentially (3/4/5 CNN blocks, 16/32/64-dim embeddings). Results are logged to WandB.
 
-Results are logged to WandB under a separate `warehouse-bot-ablation` project.
-
-### SB3 Comparison Experiment
+### PPO Validation (SB3 Comparison)
 
 ```bash
-python experiments/sb3_custom_comparison/ppo_comparison.py
+uv run python experiments/sb3_custom_comparison/ppo_comparison.py
 ```
 
-Runs a multi-seed comparison of the custom PPO vs. Stable-Baselines3's PPO on standard Gymnasium environments (CartPole-v1, Acrobot-v1). Results are logged to WandB and TensorBoard.
+Multi-seed comparison of custom PPO vs. Stable-Baselines3 on CartPole-v1 and Acrobot-v1.
 
 ---
 
-## Key Hyperparameters
+## Hyperparameters
 
-Default PPO settings used across training scripts:
+Default PPO settings used in training:
 
 | Parameter | Value | Description |
 |---|---|---|
@@ -275,57 +241,44 @@ Default PPO settings used across training scripts:
 | `max_grad_norm` | 0.5 | Gradient clipping threshold |
 | `loss_val_coef` | 0.5 | Value loss coefficient |
 | `loss_entr_coef` | 0.01–0.015 | Entropy bonus coefficient |
-| `visual_lr` | 1e-4 | Learning rate for visual encoder |
-| `task_lr` | 1e-4 | Learning rate for task encoder |
-| `general_lr` | 3e-4 | Learning rate for policy/value heads |
+| `visual_lr` | 1e-4 | Visual encoder learning rate |
+| `task_lr` | 1e-4 | Task encoder learning rate |
+| `general_lr` | 3e-4 | Policy/value head learning rate |
 
 ICM-specific (when enabled):
 
 | Parameter | Value | Description |
 |---|---|---|
-| `icm_loss_weight` | 0.1 | Weight of ICM loss in total loss |
-| `icm_eta` | 0.01 | Intrinsic reward scaling factor |
+| `icm_loss_weight` | 0.1 | ICM loss weight in total loss |
+| `icm_eta` | 0.01 | Intrinsic reward scaling |
 | `icm_beta` | 0.6 | Inverse vs. forward loss balance |
-| `intrinsic_reward_scale` | 0.05 | Scale of intrinsic reward when combining with extrinsic |
+| `intrinsic_reward_scale` | 0.05 | Intrinsic/extrinsic reward ratio |
 
 ---
 
 ## Saved Models
 
-Model checkpoints are saved as `.pth` files containing:
-- Model state dict
-- Optimizer state dict
-- Training settings (hyperparameters)
-- Seed, training iterations, and final evaluation metrics
+Model checkpoints (`.pth`) include model state dict, optimizer state, hyperparameters, seed, and evaluation metrics.
 
-### Custom PPO checkpoints (`saved_models/custom/`)
-
-| Model | Description |
+| Checkpoint | Description |
 |---|---|
-| `ppo_camera_120deg_0_20_100_find_2_items_train_0_seed_0` | Stage 2 base model — find 2 items with camera |
-| `ppo_camera_120deg_0_20_100_find_2_items_train_1` | Stage 2 second training run |
-| `ppo_camera_120deg_0_20_100_find_2_items_task_embedding_attempt_*` | Task embedding architecture iterations |
-| `ppo_camera_120deg_0_20_100_find_2_items_small_env*` | Small environment training runs |
-| `ppo_camera_120deg_0_20_100_find_2_items_deliver_task_embedding_attempt_1` | Delivery task (fine-tuned from pre-trained find model) |
-| `icm_module_performance_test_complex_env_02_10_2025` | ICM exploration test in complex environment |
+| `ppo_camera_120deg_0_20_100_find_2_items_train_1` | Stage 1 — Room_Find (pre-trained base model) |
+| `ppo_camera_120deg_0_20_100_100_find_2_items_deliver_from_pretrained_1` | Stage 2 — Room_Find_Deliver (final model, 96% success) |
 
 ---
 
 ## Experiment Tracking
 
-Training metrics are logged to **Weights & Biases (WandB)**, including:
+Training metrics are logged to **Weights & Biases**, including:
 
-- **Training metrics**: mean/std return, mean/std steps, episode count, timesteps, time per iteration
-- **Evaluation metrics**: periodic deterministic evaluation returns/steps
-- **Losses**: total, policy, value, entropy (+ ICM inverse/forward losses when enabled)
-- **Gradients**: per-component gradient magnitude
-- **Weight distributions**: per-component weight statistics
-- **Parameter changes**: per-component parameter update magnitudes
-- **Learning rates**: per parameter group
-- **Heatmaps**: agent visit frequency and direction distribution (logged periodically)
+- **Training**: mean/std return, episode count, timesteps, time per iteration
+- **Evaluation**: periodic deterministic policy evaluation (every 25 iterations, 100 episodes)
+- **Losses**: total, policy, value, entropy (+ ICM losses when enabled)
+- **Diagnostics**: per-component gradients, weight distributions, parameter update magnitudes, learning rates
+- **Heatmaps**: agent visit frequency and direction distribution
 
 ---
 
-## Related Repositories
+## Related
 
 - **[warehouse-bot](https://github.com/Pawcharz/warehouse-bot)** — Unity 3D warehouse environment with ML-Agents integration

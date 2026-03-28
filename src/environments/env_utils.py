@@ -19,21 +19,12 @@ Usage:
 """
 
 import os
-import sys
-from pathlib import Path
 
-# Environment imports
 from mlagents_envs.side_channel.engine_configuration_channel import EngineConfigurationChannel
 from mlagents_envs.environment import UnityEnvironment
 from mlagents_envs.side_channel.environment_parameters_channel import EnvironmentParametersChannel
 
-# Add root directory to path to find config module
-current_dir = os.path.dirname(os.path.abspath(__file__))
-root_dir = os.path.dirname(os.path.dirname(current_dir))
-if root_dir not in sys.path:
-    sys.path.insert(0, root_dir)
-
-from config import ROOT_DIR
+from src import PROJECT_ROOT
 
 def make_env(env_path=None, time_scale=1, no_graphics=True, verbose=True, env_type="vector", seed=0):
     """
@@ -51,6 +42,9 @@ def make_env(env_path=None, time_scale=1, no_graphics=True, verbose=True, env_ty
     """
     if env_path is None:
         raise ValueError("env_path must be specified. Please provide the path to the Unity environment executable.")
+
+    if not os.path.isabs(env_path):
+        env_path = str(PROJECT_ROOT / env_path)
     
     if verbose:
         print(f"Looking for environment at: {env_path}")

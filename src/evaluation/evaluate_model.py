@@ -1,26 +1,16 @@
 #!/usr/bin/env python3
 """
-PPO Evaluation Script for Warehouse Stage3 Environments
+PPO Evaluation Script for Warehouse Environments
 
-This script loads a PPO agent and evaluates it on the S3 (more complex) environment.
+Loads a trained PPO model checkpoint and evaluates it on a specified environment.
+Configure the model and environment paths below before running.
 """
 
 import warnings
 warnings.filterwarnings("ignore")
 
 import torch as th
-import numpy as np
-import random
-import os
-import sys
 
-# Add root directory to path to find config module
-current_dir = os.path.dirname(os.path.abspath(__file__))
-root_dir = os.path.dirname(os.path.dirname(current_dir))
-if root_dir not in sys.path:
-    sys.path.insert(0, root_dir)
-
-# Environment imports
 from src.environments.env_utils import make_env
 
 # Algorithm imports
@@ -65,27 +55,19 @@ def main():
         # Create model architecture (same as original)
         model_net = ActorCriticMultimodal(act_dim, visual_obs_size=obs_dim_visual, num_items=2, device=device)
         
-        # Load model
-        pretrained_model_path = "saved_models/custom/ppo_camera_120deg_0_20_100_find_2_items_task_embedding_attempt_1/ppo_camera_120deg_0_20_100_find_2_items_task_embedding_attempt_1_seed_0.pth"
+        # Load model — update this path to the checkpoint you want to evaluate
+        pretrained_model_path = "saved_models/custom/ppo_camera_120deg_0_20_100_100_find_2_items_deliver_from_pretrained_1/ppo_camera_120deg_0_20_100_100_find_2_items_deliver_from_pretrained_1_seed_0.pth"
         print(f"\nLoading model from: {pretrained_model_path}")
         
-        if os.path.exists(pretrained_model_path):
-            try:
-                model_net, checkpoint = load_model_checkpoint(
-                    model_path=pretrained_model_path,
-                    model=model_net,
-                    device=device,
-                    load_optimizer=True
-                )
-                print(f"Successfully loaded model")
-                print(f"Original model trained for {checkpoint.get('training_iterations', 'unknown')} iterations")
-                print(f"Original final mean return: {checkpoint.get('final_mean_return', 'unknown')}")
-                
-            except Exception as e:
-                print(f"Warning: Could not load model: {e}")
-                raise e
-        else:
-            raise Exception("No model found")
+        model_net, checkpoint = load_model_checkpoint(
+            model_path=pretrained_model_path,
+            model=model_net,
+            device=device,
+            load_optimizer=True
+        )
+        print(f"Successfully loaded model")
+        print(f"Original model trained for {checkpoint.get('training_iterations', 'unknown')} iterations")
+        print(f"Original final mean return: {checkpoint.get('final_mean_return', 'unknown')}")
         
         # Count and display parameters
         model_params = count_parameters(model_net)
